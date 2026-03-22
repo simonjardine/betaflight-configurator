@@ -250,7 +250,9 @@
             <!-- ═══════════════ INSTRUCTIONS ═══════════════ -->
             <div v-show="activeView === 'instructions'" class="at-view">
                 <div class="at-instructions">
-                    <button class="at-instructions-popup-btn" @click="openInstructionsPopup">↗ Open in New Window</button>
+                    <button class="at-instructions-popup-btn" @click="openInstructionsPopup">
+                        ↗ Open in New Window
+                    </button>
                     <h3>STEP 1: CALCULATE BASELINE PIDs</h3>
                     <ul>
                         <li>Enter motor KV, battery voltage, prop size, weight and flying style.</li>

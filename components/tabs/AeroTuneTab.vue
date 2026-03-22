@@ -345,6 +345,7 @@ import BaseTab from "./BaseTab.vue";
 import MSP from "@/js/msp";
 import MSPCodes from "@/js/msp/MSPCodes";
 import { mspHelper } from "@/js/msp/MSPHelper";
+import { usePidTuningStore } from "@/stores/pidTuning";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AeroTune V5.6 Calculator
@@ -421,10 +422,10 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
     const yawP = clamp(Math.round(pBase * 0.945), 15, 70);
 
     const FF_BY_STYLE = {
-        Cinematic:  { roll_f: 90,  pitch_f: 95,  yaw_f: 90  },
-        LongRange:  { roll_f: 90,  pitch_f: 95,  yaw_f: 90  },
-        Freestyle:  { roll_f: 120, pitch_f: 125, yaw_f: 120 },
-        Racing:     { roll_f: 135, pitch_f: 143, yaw_f: 135 },
+        Cinematic: { roll_f: 90, pitch_f: 95, yaw_f: 90 },
+        LongRange: { roll_f: 90, pitch_f: 95, yaw_f: 90 },
+        Freestyle: { roll_f: 120, pitch_f: 125, yaw_f: 120 },
+        Racing: { roll_f: 135, pitch_f: 143, yaw_f: 135 },
     };
     const ff = FF_BY_STYLE[style] || FF_BY_STYLE.Freestyle;
 
@@ -958,19 +959,35 @@ function formatAnalysisResult(r) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Vue Component
 // ─────────────────────────────────────────────────────────────────────────────
+const STORAGE_KEY = "aerotune_inputs";
+
+function loadStoredInputs() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
 export default {
     name: "AeroTuneTab",
     components: { BaseTab },
 
+    setup() {
+        return { pidTuningStore: usePidTuningStore() };
+    },
+
     data() {
+        const stored = loadStoredInputs();
         return {
             activeView: "calculator",
-            // Calculator inputs
-            kv: 2400,
-            voltage: 22.2,
-            prop: 5.0,
-            weight: 500,
-            style: "Freestyle",
+            // Calculator inputs — restored from localStorage if available
+            kv: stored?.kv ?? 2400,
+            voltage: stored?.voltage ?? 22.2,
+            prop: stored?.prop ?? 5.0,
+            weight: stored?.weight ?? 500,
+            style: stored?.style ?? "Freestyle",
             voltagePresets: [
                 { label: "1S", v: 3.7 },
                 { label: "2S", v: 7.4 },
@@ -999,7 +1016,23 @@ export default {
         },
     },
 
+    watch: {
+        kv(v) { this._persistInputs(); },
+        voltage(v) { this._persistInputs(); },
+        prop(v) { this._persistInputs(); },
+        weight(v) { this._persistInputs(); },
+        style(v) { this._persistInputs(); },
+    },
+
     methods: {
+        _persistInputs() {
+            try {
+                localStorage.setItem(
+                    STORAGE_KEY,
+                    JSON.stringify({ kv: this.kv, voltage: this.voltage, prop: this.prop, weight: this.weight, style: this.style }),
+                );
+            } catch { /* storage unavailable — silently ignore */ }
+        },
         selectVoltage(v) {
             this.voltage = v;
         },
@@ -1053,6 +1086,10 @@ export default {
                 alert("Failed to send PID values to FC. Check connection and try again.");
                 return;
             }
+
+            // Tell the PID Tuning store that values were written externally so
+            // the Save button is enabled when the tab loads the data.
+            this.pidTuningStore.markExternalChange();
 
             // Navigate to PID tuning tab
             const pidTabLink = document.querySelector("li.tab_pid_tuning a");

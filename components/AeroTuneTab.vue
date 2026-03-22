@@ -1017,11 +1017,21 @@ export default {
     },
 
     watch: {
-        kv(v) { this._persistInputs(); },
-        voltage(v) { this._persistInputs(); },
-        prop(v) { this._persistInputs(); },
-        weight(v) { this._persistInputs(); },
-        style(v) { this._persistInputs(); },
+        kv(v) {
+            this._persistInputs();
+        },
+        voltage(v) {
+            this._persistInputs();
+        },
+        prop(v) {
+            this._persistInputs();
+        },
+        weight(v) {
+            this._persistInputs();
+        },
+        style(v) {
+            this._persistInputs();
+        },
     },
 
     methods: {
@@ -1029,9 +1039,17 @@ export default {
             try {
                 localStorage.setItem(
                     STORAGE_KEY,
-                    JSON.stringify({ kv: this.kv, voltage: this.voltage, prop: this.prop, weight: this.weight, style: this.style }),
+                    JSON.stringify({
+                        kv: this.kv,
+                        voltage: this.voltage,
+                        prop: this.prop,
+                        weight: this.weight,
+                        style: this.style,
+                    }),
                 );
-            } catch { /* storage unavailable — silently ignore */ }
+            } catch {
+                /* storage unavailable — silently ignore */
+            }
         },
         selectVoltage(v) {
             this.voltage = v;
@@ -1069,6 +1087,20 @@ export default {
                 FC.PIDS[2][2] = p.yaw_d;
             }
 
+            // Read current advanced tuning values from FC before modifying so
+            // we preserve ALL fields (idleMinRpm, TPA, iterm relax, anti-gravity,
+            // etc.) that AeroTune doesn't touch.  Without this read, FC.ADVANCED_TUNING
+            // may still be at its all-zero defaults (if the user hasn't visited
+            // the PID tab yet), which would zero out those settings on the FC.
+            try {
+                await MSP.promise(MSPCodes.MSP_PID_ADVANCED);
+            } catch (e) {
+                console.error("[AeroTune] Failed to read MSP_PID_ADVANCED before applying:", e);
+                alert("Failed to read advanced tuning from FC. Check connection and try again.");
+                return;
+            }
+
+            // Now patch only the feedforward and D_min fields.
             if (FC.ADVANCED_TUNING) {
                 FC.ADVANCED_TUNING.feedforwardRoll = p.roll_f;
                 FC.ADVANCED_TUNING.feedforwardPitch = p.pitch_f;

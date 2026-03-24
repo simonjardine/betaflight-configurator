@@ -54,11 +54,7 @@ export default defineComponent({
             const plotR = W / 2 - PAD; // plot radius in pixels
 
             // Background
-            svg.append("rect")
-                .attr("width", W)
-                .attr("height", H)
-                .attr("fill", "#0c1117")
-                .attr("rx", 4);
+            svg.append("rect").attr("width", W).attr("height", H).attr("fill", "#0c1117").attr("rx", 4);
 
             const fixes = props.fixes;
 
@@ -88,46 +84,53 @@ export default defineComponent({
             }));
 
             // ── Accuracy statistics (empirical percentiles) ────────────────
-            const radii = pts
-                .map((p) => Math.sqrt(p.x * p.x + p.y * p.y))
-                .sort((a, b) => a - b);
+            const radii = pts.map((p) => Math.sqrt(p.x * p.x + p.y * p.y)).sort((a, b) => a - b);
 
-            const cep50 = percentile(radii, 0.50);   // 50th %ile — CEP 50%
-            const cep95 = percentile(radii, 0.95);   // 95th %ile — CEP 95%  (= 2σ display)
-            const sig1  = percentile(radii, 0.6827); // 1σ ≈ 68.27% containment
-            const sig2  = percentile(radii, 0.9545); // 2σ ≈ 95.45% containment
+            const cep50 = percentile(radii, 0.5); // 50th %ile — CEP 50%
+            const cep95 = percentile(radii, 0.95); // 95th %ile — CEP 95%  (= 2σ display)
+            const sig1 = percentile(radii, 0.6827); // 1σ ≈ 68.27% containment
+            const sig2 = percentile(radii, 0.9545); // 2σ ≈ 95.45% containment
 
             // ── Axis scaling — fit all points with 30% headroom ────────────
-            const maxR  = radii[radii.length - 1] || 0.1;
-            const axisM = maxR * 1.3;            // metres from centre to edge of plot
-            const scale = plotR / axisM;          // pixels per metre
+            const maxR = radii[radii.length - 1] || 0.1;
+            const axisM = maxR * 1.3; // metres from centre to edge of plot
+            const scale = plotR / axisM; // pixels per metre
 
             const toSVG = (mx, my) => [cx + mx * scale, cy - my * scale];
 
             // ── Crosshair axes ─────────────────────────────────────────────
             const AXIS_COLOR = "#1a2535";
             svg.append("line")
-                .attr("x1", cx).attr("x2", cx)
-                .attr("y1", PAD).attr("y2", H - PAD)
-                .attr("stroke", AXIS_COLOR).attr("stroke-width", 1);
+                .attr("x1", cx)
+                .attr("x2", cx)
+                .attr("y1", PAD)
+                .attr("y2", H - PAD)
+                .attr("stroke", AXIS_COLOR)
+                .attr("stroke-width", 1);
             svg.append("line")
-                .attr("x1", PAD).attr("x2", W - PAD)
-                .attr("y1", cy).attr("y2", cy)
-                .attr("stroke", AXIS_COLOR).attr("stroke-width", 1);
+                .attr("x1", PAD)
+                .attr("x2", W - PAD)
+                .attr("y1", cy)
+                .attr("y2", cy)
+                .attr("stroke", AXIS_COLOR)
+                .attr("stroke-width", 1);
 
             // Cardinal labels (N/S/E/W)
             const CARDINAL_COLOR = "#253347";
             [
-                { t: "N", x: cx,          y: PAD - 8,      a: "middle", b: "auto"   },
-                { t: "S", x: cx,          y: H - PAD + 14, a: "middle", b: "auto"   },
-                { t: "E", x: W - PAD + 12, y: cy,           a: "middle", b: "middle" },
-                { t: "W", x: PAD - 12,    y: cy,           a: "middle", b: "middle" },
+                { t: "N", x: cx, y: PAD - 8, a: "middle", b: "auto" },
+                { t: "S", x: cx, y: H - PAD + 14, a: "middle", b: "auto" },
+                { t: "E", x: W - PAD + 12, y: cy, a: "middle", b: "middle" },
+                { t: "W", x: PAD - 12, y: cy, a: "middle", b: "middle" },
             ].forEach(({ t, x, y, a, b }) => {
                 svg.append("text")
-                    .attr("x", x).attr("y", y)
-                    .attr("text-anchor", a).attr("dominant-baseline", b)
+                    .attr("x", x)
+                    .attr("y", y)
+                    .attr("text-anchor", a)
+                    .attr("dominant-baseline", b)
                     .attr("fill", CARDINAL_COLOR)
-                    .attr("font-size", "10px").attr("font-weight", "bold")
+                    .attr("font-size", "10px")
+                    .attr("font-weight", "bold")
                     .text(t);
             });
 
@@ -155,7 +158,9 @@ export default defineComponent({
                     if (rPx < 1) return;
 
                     svg.append("circle")
-                        .attr("cx", cx).attr("cy", cy).attr("r", rPx)
+                        .attr("cx", cx)
+                        .attr("cy", cy)
+                        .attr("r", rPx)
                         .attr("fill", "none")
                         .attr("stroke", color)
                         .attr("stroke-width", 1.2)
@@ -167,7 +172,8 @@ export default defineComponent({
                     const lx = cx + (rPx + 2) * Math.cos(labelAngle);
                     const ly = cy + (rPx + 2) * Math.sin(labelAngle);
                     svg.append("text")
-                        .attr("x", lx).attr("y", ly)
+                        .attr("x", lx)
+                        .attr("y", ly)
                         .attr("text-anchor", "start")
                         .attr("dominant-baseline", "middle")
                         .attr("fill", color)
@@ -190,48 +196,59 @@ export default defineComponent({
                 const freshness = (p.t - tMin) / tSpan; // 0 = oldest, 1 = newest
                 const [sx, sy] = toSVG(p.x, p.y);
                 svg.append("circle")
-                    .attr("cx", sx).attr("cy", sy).attr("r", 2.5)
+                    .attr("cx", sx)
+                    .attr("cy", sy)
+                    .attr("r", 2.5)
                     .attr("fill", colorByAge(freshness))
                     .attr("opacity", 0.15 + freshness * 0.85);
             });
 
             // ── Mean centre mark ───────────────────────────────────────────
             svg.append("circle")
-                .attr("cx", cx).attr("cy", cy).attr("r", 4)
-                .attr("fill", "none").attr("stroke", "#ffffff").attr("stroke-width", 1)
+                .attr("cx", cx)
+                .attr("cy", cy)
+                .attr("r", 4)
+                .attr("fill", "none")
+                .attr("stroke", "#ffffff")
+                .attr("stroke-width", 1)
                 .attr("opacity", 0.4);
             svg.append("circle")
-                .attr("cx", cx).attr("cy", cy).attr("r", 1.5)
-                .attr("fill", "#ffffff").attr("opacity", 0.8);
+                .attr("cx", cx)
+                .attr("cy", cy)
+                .attr("r", 1.5)
+                .attr("fill", "#ffffff")
+                .attr("opacity", 0.8);
 
             // ── σ accuracy labels (top-left and top-right) ────────────────
             const STAT_Y = PAD - 12;
             svg.append("text")
-                .attr("x", PAD + 2).attr("y", STAT_Y)
+                .attr("x", PAD + 2)
+                .attr("y", STAT_Y)
                 .attr("dominant-baseline", "hanging")
                 .attr("fill", "#d0d8e4")
-                .attr("font-size", "11px").attr("font-weight", "bold")
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
                 .text(`1σ: ${sig1.toFixed(sig1 < 10 ? 1 : 0)}m`);
 
             svg.append("text")
-                .attr("x", W - PAD - 2).attr("y", STAT_Y)
+                .attr("x", W - PAD - 2)
+                .attr("y", STAT_Y)
                 .attr("text-anchor", "end")
                 .attr("dominant-baseline", "hanging")
                 .attr("fill", "#d0d8e4")
-                .attr("font-size", "11px").attr("font-weight", "bold")
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
                 .text(`2σ: ${sig2.toFixed(sig2 < 10 ? 1 : 0)}m`);
 
             // ── Bottom info: fix count + scale ─────────────────────────────
-            const halfRangeStr = axisM < 1
-                ? axisM.toFixed(2)
-                : axisM < 10
-                  ? axisM.toFixed(1)
-                  : axisM.toFixed(0);
+            const halfRangeStr = axisM < 1 ? axisM.toFixed(2) : axisM < 10 ? axisM.toFixed(1) : axisM.toFixed(0);
 
             svg.append("text")
-                .attr("x", cx).attr("y", H - 6)
+                .attr("x", cx)
+                .attr("y", H - 6)
                 .attr("text-anchor", "middle")
-                .attr("fill", "#2e4058").attr("font-size", "9px")
+                .attr("fill", "#2e4058")
+                .attr("font-size", "9px")
                 .text(`${fixes.length} fixes  ·  ±${halfRangeStr}m`);
         };
 

@@ -102,11 +102,76 @@
                                     <thead>
                                         <tr>
                                             <th class="at-pid-th-axis"></th>
-                                            <th>Proportional <span class="at-tip" @mouseenter="showTip($event, 'How far the drone reacts to an input — like how far a seesaw swings. Too low and it feels sluggish, too high and it overshoots.')" @mouseleave="hideTip">ⓘ</span></th>
-                                            <th>Integral <span class="at-tip" @mouseenter="showTip($event, 'How quickly it returns to centre after a disturbance — like the seesaw finding balance. Too low and it drifts, too high and it hunts.')" @mouseleave="hideTip">ⓘ</span></th>
-                                            <th>D Max <span class="at-tip" @mouseenter="showTip($event, 'The maximum dampening allowed at high throttle — D rises up to this ceiling during fast manoeuvres.')" @mouseleave="hideTip">ⓘ</span></th>
-                                            <th>Derivative <span class="at-tip" @mouseenter="showTip($event, 'The dampening that cushions the movement — like a rubber tyre under the seesaw. Stops it bouncing back and forth after each input.')" @mouseleave="hideTip">ⓘ</span></th>
-                                            <th>Feedforward <span class="at-tip" @mouseenter="showTip($event, 'How eagerly it anticipates your stick input — jumps ahead of the move rather than reacting to it.')" @mouseleave="hideTip">ⓘ</span></th>
+                                            <th>
+                                                Proportional
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'How far the drone reacts to an input — like how far a seesaw swings. Too low and it feels sluggish, too high and it overshoots.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
+                                            <th>
+                                                Integral
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'How quickly it returns to centre after a disturbance — like the seesaw finding balance. Too low and it drifts, too high and it hunts.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
+                                            <th>
+                                                D Max
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'The maximum dampening allowed at high throttle — D rises up to this ceiling during fast manoeuvres.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
+                                            <th>
+                                                Derivative
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'The dampening that cushions the movement — like a rubber tyre under the seesaw. Stops it bouncing back and forth after each input.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
+                                            <th>
+                                                Feedforward
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'How eagerly it anticipates your stick input — jumps ahead of the move rather than reacting to it.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -314,7 +379,11 @@
     ><!-- /.tab-aerotune -->
 
     <Teleport to="body">
-        <div v-if="tooltip.visible" class="at-tooltip-bubble" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+        <div
+            v-if="tooltip.visible"
+            class="at-tooltip-bubble"
+            :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }"
+        >
             {{ tooltip.text }}
         </div>
     </Teleport>
@@ -411,13 +480,13 @@ function interpolatePoints(x, points) {
 // Applied FULLY to P and D; HALF correction applied to I and FF.
 function voltageScalar(voltage) {
     return interpolatePoints(parseFloat(voltage), [
-        [3.7, 1.10],   // 1S
-        [7.4, 1.10],   // 2S
-        [11.1, 1.10],  // 3S
-        [14.8, 1.00],  // 4S  ← baseline
-        [18.5, 0.95],  // 5S
-        [22.2, 0.87],  // 6S
-        [29.6, 0.77],  // 8S
+        [3.7, 1.1], // 1S
+        [7.4, 1.1], // 2S
+        [11.1, 1.1], // 3S
+        [14.8, 1.0], // 4S  ← baseline
+        [18.5, 0.95], // 5S
+        [22.2, 0.87], // 6S
+        [29.6, 0.77], // 8S
     ]);
 }
 
@@ -425,14 +494,14 @@ function voltageScalar(voltage) {
 // Applied FULLY to P; HALF correction applied to I.
 function propScalar(prop) {
     return interpolatePoints(parseFloat(prop), [
-        [2,   0.65],
-        [3,   0.88],
+        [2, 0.65],
+        [3, 0.88],
         [3.5, 0.89],
-        [4,   0.90],
-        [5,   1.00],  // ← baseline
-        [6,   1.10],
-        [7,   1.18],
-        [8,   1.25],
+        [4, 0.9],
+        [5, 1.0], // ← baseline
+        [6, 1.1],
+        [7, 1.18],
+        [8, 1.25],
     ]);
 }
 
@@ -441,14 +510,14 @@ function propScalar(prop) {
 // 5" baseline → 0.61. d_min uses 0.887× this ratio.
 function dRatio(prop) {
     return interpolatePoints(parseFloat(prop), [
-        [2,   0.95],
-        [3,   0.84],  // → D=35 at 3"/4S/Bando/2000KV anchor
-        [3.5, 0.80],
-        [4,   0.76],  // → D=35 at 4"/4S/Racing/2000KV anchor
-        [5,   0.61],  // ← baseline
-        [6,   0.55],
-        [7,   0.50],
-        [8,   0.46],
+        [2, 0.95],
+        [3, 0.84], // → D=35 at 3"/4S/Bando/2000KV anchor
+        [3.5, 0.8],
+        [4, 0.76], // → D=35 at 4"/4S/Racing/2000KV anchor
+        [5, 0.61], // ← baseline
+        [6, 0.55],
+        [7, 0.5],
+        [8, 0.46],
     ]);
 }
 
@@ -465,38 +534,38 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
 
     // Base P at 5"/4S scale — only KV, style, and weight contribute here.
     const rawBase = interpolateKV(kv) * (FLYING_STYLES[style] || 1.0) * (1.0 + ((weight - 500) / 2000) * 0.15);
-    const base = rawBase * BASE_NORM;  // normalised roll base
+    const base = rawBase * BASE_NORM; // normalised roll base
 
     // Voltage × prop correction
     const vScal = voltageScalar(voltage);
     const pScal = propScalar(prop);
-    const dr    = dRatio(prop);
+    const dr = dRatio(prop);
 
-    const fullMult = vScal * pScal;             // P — full voltage+prop correction
+    const fullMult = vScal * pScal; // P — full voltage+prop correction
     const halfMult = 1 + (fullMult - 1) * 0.5; // I — half voltage+prop correction
-    const dMult    = vScal * pScal;             // D uses same scalars but prop-aware ratio
-    const ffMult   = 1 + (vScal - 1) * 0.5;    // FF — voltage-only half correction (prop size doesn't shift FF)
+    const dMult = vScal * pScal; // D uses same scalars but prop-aware ratio
+    const ffMult = 1 + (vScal - 1) * 0.5; // FF — voltage-only half correction (prop size doesn't shift FF)
 
-    const rollBase  = base;
+    const rollBase = base;
     const pitchBase = base + 3;
-    const yawBase   = base * 0.945;
+    const yawBase = base * 0.945;
 
     const ff = FF_BY_STYLE[style] || FF_BY_STYLE.Bando;
 
     return {
-        roll_p:      clamp(Math.round(rollBase  * fullMult),        20, 90),
-        roll_i:      Math.round(rollBase  * 1.902 * halfMult),
-        roll_d:      Math.round(rollBase  * dr    * dMult),
-        roll_f:      Math.round(ff.roll_f         * ffMult),
-        pitch_p:     clamp(Math.round(pitchBase * fullMult),        20, 90),
-        pitch_i:     Math.round(pitchBase * 1.902 * halfMult),
-        pitch_d:     Math.round(pitchBase * dr    * dMult),
-        pitch_f:     Math.round(ff.pitch_f        * ffMult),
-        yaw_p:       clamp(Math.round(yawBase   * fullMult),        15, 70),
-        yaw_i:       Math.round(yawBase   * 1.902 * halfMult),
-        yaw_d:       0,
-        yaw_f:       Math.round(ff.yaw_f          * ffMult),
-        d_min_roll:  Math.round(rollBase  * dr * 0.887 * dMult),
+        roll_p: clamp(Math.round(rollBase * fullMult), 20, 90),
+        roll_i: Math.round(rollBase * 1.902 * halfMult),
+        roll_d: Math.round(rollBase * dr * dMult),
+        roll_f: Math.round(ff.roll_f * ffMult),
+        pitch_p: clamp(Math.round(pitchBase * fullMult), 20, 90),
+        pitch_i: Math.round(pitchBase * 1.902 * halfMult),
+        pitch_d: Math.round(pitchBase * dr * dMult),
+        pitch_f: Math.round(ff.pitch_f * ffMult),
+        yaw_p: clamp(Math.round(yawBase * fullMult), 15, 70),
+        yaw_i: Math.round(yawBase * 1.902 * halfMult),
+        yaw_d: 0,
+        yaw_f: Math.round(ff.yaw_f * ffMult),
+        d_min_roll: Math.round(rollBase * dr * 0.887 * dMult),
         d_min_pitch: Math.round(pitchBase * dr * 0.887 * dMult),
     };
 }

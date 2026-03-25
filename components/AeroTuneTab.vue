@@ -134,20 +134,6 @@
                                                 >
                                             </th>
                                             <th>
-                                                D Max
-                                                <span
-                                                    class="at-tip"
-                                                    @mouseenter="
-                                                        showTip(
-                                                            $event,
-                                                            'The maximum dampening allowed at high throttle — D rises up to this ceiling during fast manoeuvres.',
-                                                        )
-                                                    "
-                                                    @mouseleave="hideTip"
-                                                    >ⓘ</span
-                                                >
-                                            </th>
-                                            <th>
                                                 Derivative
                                                 <span
                                                     class="at-tip"
@@ -155,6 +141,20 @@
                                                         showTip(
                                                             $event,
                                                             'The dampening that cushions the movement — like a rubber tyre under the seesaw. Stops it bouncing back and forth after each input.',
+                                                        )
+                                                    "
+                                                    @mouseleave="hideTip"
+                                                    >ⓘ</span
+                                                >
+                                            </th>
+                                            <th>
+                                                D Max
+                                                <span
+                                                    class="at-tip"
+                                                    @mouseenter="
+                                                        showTip(
+                                                            $event,
+                                                            'The maximum dampening allowed at high throttle — D rises up to this ceiling during fast manoeuvres.',
                                                         )
                                                     "
                                                     @mouseleave="hideTip"
@@ -182,24 +182,24 @@
                                             <td class="at-pid-axis-label">ROLL</td>
                                             <td class="at-pid-num">{{ pids.roll_p }}</td>
                                             <td class="at-pid-num">{{ pids.roll_i }}</td>
-                                            <td class="at-pid-num">{{ pids.roll_d }}</td>
                                             <td class="at-pid-num">{{ pids.d_min_roll }}</td>
+                                            <td class="at-pid-num">{{ pids.dMax_roll }}</td>
                                             <td class="at-pid-num">{{ pids.roll_f }}</td>
                                         </tr>
                                         <tr class="at-pid-row at-pid-row--pitch">
                                             <td class="at-pid-axis-label">PITCH</td>
                                             <td class="at-pid-num">{{ pids.pitch_p }}</td>
                                             <td class="at-pid-num">{{ pids.pitch_i }}</td>
-                                            <td class="at-pid-num">{{ pids.pitch_d }}</td>
                                             <td class="at-pid-num">{{ pids.d_min_pitch }}</td>
+                                            <td class="at-pid-num">{{ pids.dMax_pitch }}</td>
                                             <td class="at-pid-num">{{ pids.pitch_f }}</td>
                                         </tr>
                                         <tr class="at-pid-row at-pid-row--yaw">
                                             <td class="at-pid-axis-label">YAW</td>
                                             <td class="at-pid-num">{{ pids.yaw_p }}</td>
                                             <td class="at-pid-num">{{ pids.yaw_i }}</td>
-                                            <td class="at-pid-num">{{ pids.yaw_d }}</td>
                                             <td class="at-pid-num at-pid-num--muted">–</td>
+                                            <td class="at-pid-num">{{ pids.yaw_d }}</td>
                                             <td class="at-pid-num">{{ pids.yaw_f }}</td>
                                         </tr>
                                     </tbody>
@@ -280,6 +280,15 @@
                                 <button id="at-analyze-btn" :disabled="!csvFile" @click="analyzeFile">
                                     🔍 ANALYZE
                                 </button>
+                            </div>
+
+                            <div v-if="bblSessions.length > 1" class="at-form-row" style="margin-top: 8px">
+                                <label style="font-size: 12px; color: var(--subtleText)">Select flight session:</label>
+                                <select v-model.number="bblSelectedSession" @change="runBBLSession(bblSelectedSession)">
+                                    <option v-for="(_, idx) in bblSessions" :key="idx" :value="idx">
+                                        Session {{ idx + 1 }}
+                                    </option>
+                                </select>
                             </div>
 
                             <div class="at-results-box">{{ analysisResult }}</div>
@@ -771,11 +780,11 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
     return {
         roll_p: clamp(Math.round(rollBase * fullMult), 20, 90),
         roll_i: Math.round(rollBase * 1.902 * halfMult),
-        roll_d: Math.round(rollBase * dr * dMult),
+        dMax_roll: Math.round(rollBase * dr * dMult),
         roll_f: Math.round(ff.roll_f * ffMult),
         pitch_p: clamp(Math.round(pitchBase * fullMult), 20, 90),
         pitch_i: Math.round(pitchBase * 1.902 * halfMult),
-        pitch_d: Math.round(pitchBase * dr * dMult),
+        dMax_pitch: Math.round(pitchBase * dr * dMult),
         pitch_f: Math.round(ff.pitch_f * ffMult),
         yaw_p: clamp(Math.round(yawBase * fullMult), 15, 70),
         yaw_i: Math.round(yawBase * 1.902 * halfMult),
@@ -1297,16 +1306,43 @@ function formatAnalysisResult(r) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BBL Binary Start Finder
-// Scans byte-by-byte to find the offset where binary frame data begins,
-// i.e. right after the last ASCII 'H ...' header line.
+// Returns the byte offset where binary frame data begins for a given session,
+// i.e. the position immediately after the last 'H ...' header line of that
+// session.  sessionIndex 0 = first session, 1 = second, etc.
 // ─────────────────────────────────────────────────────────────────────────────
-function findBBLBinaryStart(buf) {
+function findBBLBinaryStart(buf, sessionIndex = 0) {
     const MARKER = "H Product:Blackbox flight data recorder by Nicholas Sherlock";
     const markerBytes = Array.from(MARKER).map((c) => c.charCodeAt(0));
-
-    let pos = 0;
     const len = buf.length;
-    let inHeader = false;
+
+    // Phase 1: locate the start of the target session's header by finding
+    // the Nth occurrence of the product marker.
+    let pos = 0;
+    let sessionsFound = -1;
+    let sessionHeaderStart = -1;
+
+    while (pos < len) {
+        if (buf[pos] === markerBytes[0]) {
+            let isMarker = markerBytes.length + pos <= len;
+            for (let j = 1; isMarker && j < markerBytes.length; j++) {
+                if (buf[pos + j] !== markerBytes[j]) isMarker = false;
+            }
+            if (isMarker) {
+                sessionsFound++;
+                if (sessionsFound === sessionIndex) {
+                    sessionHeaderStart = pos;
+                    break;
+                }
+            }
+        }
+        pos++;
+    }
+
+    if (sessionHeaderStart === -1) return 0; // session not found
+
+    // Phase 2: scan forward from the session marker, collecting 'H ' lines.
+    // The first non-'H ' line marks the start of binary data.
+    pos = sessionHeaderStart;
     let lastHeaderEnd = 0;
 
     while (pos < len) {
@@ -1314,37 +1350,45 @@ function findBBLBinaryStart(buf) {
         while (pos < len && buf[pos] !== 0x0a) pos++; // find \n
         if (pos < len) pos++; // skip \n
 
-        const lineLen = pos - lineStart;
-        if (lineLen < 2) continue;
+        if (pos - lineStart < 2) continue;
 
-        const startsWithH = buf[lineStart] === 0x48 && buf[lineStart + 1] === 0x20;
-
-        if (!inHeader) {
-            if (startsWithH) {
-                let isMarker = true;
-                for (let j = 0; j < markerBytes.length && lineStart + j < len; j++) {
-                    if (buf[lineStart + j] !== markerBytes[j]) {
-                        isMarker = false;
-                        break;
-                    }
-                }
-                if (isMarker) {
-                    inHeader = true;
-                    lastHeaderEnd = pos;
-                }
-            }
+        if (buf[lineStart] === 0x48 && buf[lineStart + 1] === 0x20) {
+            // 'H ' line — still in header
+            lastHeaderEnd = pos;
         } else {
-            if (startsWithH) {
-                lastHeaderEnd = pos;
-            } else {
-                break; // binary data starts at lastHeaderEnd
-            }
+            break; // binary data starts here
         }
-
-        if (pos > 65536 && !inHeader) break; // safety: give up if no header found in 64 KB
     }
 
     return lastHeaderEnd;
+}
+
+// Returns the byte offset of the Nth session's product-marker line,
+// i.e. the very first byte of that session's header block.
+// Used to compute where session N's binary data must end.
+function findBBLSessionHeaderStart(buf, sessionIndex) {
+    const MARKER = "H Product:Blackbox flight data recorder by Nicholas Sherlock";
+    const markerBytes = Array.from(MARKER).map((c) => c.charCodeAt(0));
+    const len = buf.length;
+    let pos = 0;
+    let sessionsFound = -1;
+
+    while (pos < len) {
+        if (buf[pos] === markerBytes[0]) {
+            let isMarker = markerBytes.length + pos <= len;
+            for (let j = 1; isMarker && j < markerBytes.length; j++) {
+                if (buf[pos + j] !== markerBytes[j]) { isMarker = false; }
+            }
+            if (isMarker) {
+                sessionsFound++;
+                if (sessionsFound === sessionIndex) {
+                    return pos;
+                }
+            }
+        }
+        pos++;
+    }
+    return -1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1398,6 +1442,10 @@ export default {
             csvFile: null,
             fileName: "No file selected",
             analysisResult: "Select a Betaflight blackbox file (.bfl, .bbl, or .csv) and click ANALYZE.",
+            // Multi-session BBL support
+            bblSessions: [],
+            bblSelectedSession: 0,
+            bblBuffer: null,
             tooltip: { visible: false, text: "", x: 0, y: 0 },
             // Auto Tune (chirp sweep)
             chirpPitch: 230,
@@ -1467,9 +1515,9 @@ export default {
             }
         },
         openInstructionsPopup() {
-            const popup = window.open("", "aerotune_instructions", "width=620,height=800,resizable=yes,scrollbars=yes");
-            if (!popup) return;
-            popup.document.write(`<!DOCTYPE html>
+            // Build the HTML as a Blob and open via object URL to avoid
+            // document.write() (flagged as a security hotspot by static analysis).
+            const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1562,8 +1610,10 @@ export default {
   <li><strong>Gyro RPM Filter:</strong> Enable if using bidirectional DSHOT — the most effective filter available for eliminating motor noise harmonics.</li>
 </ul>
 </body>
-</html>`);
-            popup.document.close();
+</html>`;
+            const blob = new Blob([html], { type: "text/html" });
+            const url = URL.createObjectURL(blob);
+            window.open(url, "aerotune_instructions", "width=620,height=800,resizable=yes,scrollbars=yes");
         },
 
         selectVoltage(v) {
@@ -1589,14 +1639,24 @@ export default {
 
             const p = this.pids;
 
+            // Read current PID values from FC before patching so we write
+            // against the live FC state, not stale defaults.
+            try {
+                await MSP.promise(MSPCodes.MSP_PID);
+            } catch (e) {
+                console.error("[AeroTune] Failed to read MSP_PID before applying:", e);
+                alert("Failed to read PID values from FC. Check connection and try again.");
+                return;
+            }
+
             // Write into FC reactive state
             if (FC.PIDS && FC.PIDS.length >= 3) {
                 FC.PIDS[0][0] = p.roll_p;
                 FC.PIDS[0][1] = p.roll_i;
-                FC.PIDS[0][2] = p.roll_d;
+                FC.PIDS[0][2] = p.d_min_roll;
                 FC.PIDS[1][0] = p.pitch_p;
                 FC.PIDS[1][1] = p.pitch_i;
-                FC.PIDS[1][2] = p.pitch_d;
+                FC.PIDS[1][2] = p.d_min_pitch;
                 FC.PIDS[2][0] = p.yaw_p;
                 FC.PIDS[2][1] = p.yaw_i;
                 FC.PIDS[2][2] = p.yaw_d;
@@ -1615,13 +1675,13 @@ export default {
                 return;
             }
 
-            // Now patch only the feedforward and D_min fields.
+            // Now patch only the feedforward and D Max fields.
             if (FC.ADVANCED_TUNING) {
                 FC.ADVANCED_TUNING.feedforwardRoll = p.roll_f;
                 FC.ADVANCED_TUNING.feedforwardPitch = p.pitch_f;
                 FC.ADVANCED_TUNING.feedforwardYaw = p.yaw_f;
-                FC.ADVANCED_TUNING.dMaxRoll = p.d_min_roll;
-                FC.ADVANCED_TUNING.dMaxPitch = p.d_min_pitch;
+                FC.ADVANCED_TUNING.dMaxRoll = p.dMax_roll;
+                FC.ADVANCED_TUNING.dMaxPitch = p.dMax_pitch;
             }
 
             // Push to FC hardware RAM so PID tab reads back the new values on mount
@@ -1653,8 +1713,8 @@ export default {
                 fr = this.filterRec;
             const text = [
                 `# AeroTune V5.6 PID Values`,
-                `Roll   P=${p.roll_p}  I=${p.roll_i}  D=${p.roll_d}  F=${p.roll_f}  D_min=${p.d_min_roll}`,
-                `Pitch  P=${p.pitch_p}  I=${p.pitch_i}  D=${p.pitch_d}  F=${p.pitch_f}  D_min=${p.d_min_pitch}`,
+                `Roll   P=${p.roll_p}  I=${p.roll_i}  D_Max=${p.dMax_roll}  F=${p.roll_f}  D_min=${p.d_min_roll}`,
+                `Pitch  P=${p.pitch_p}  I=${p.pitch_i}  D_Max=${p.dMax_pitch}  F=${p.pitch_f}  D_min=${p.d_min_pitch}`,
                 `Yaw    P=${p.yaw_p}  I=${p.yaw_i}  D=${p.yaw_d}  F=${p.yaw_f}`,
                 `Gyro Lowpass 2 recommendation: ${fr.hz} Hz (${fr.low}–${fr.high} Hz) – ${fr.note}`,
             ].join("\n");
@@ -1663,7 +1723,47 @@ export default {
                 setTimeout(() => {
                     this.copyBtnText = "📋 COPY ALL VALUES";
                 }, 2000);
+            }).catch((err) => {
+                console.error("[AeroTune] Failed to copy to clipboard:", err);
             });
+        },
+
+        /** Decode and analyze a specific BBL session from the already-loaded buffer. */
+        _decodeBBLSession(sessionIdx, buffer, sessions) {
+            const config = sessions[sessionIdx];
+            const headerEnd = findBBLBinaryStart(buffer, sessionIdx);
+            if (headerEnd === 0) {
+                this.analysisResult = "ERROR: Could not locate frame data in blackbox file.";
+                return;
+            }
+
+            // Bound the decode to this session's byte range so multi-session
+            // logs don't bleed into the next session's header bytes.
+            const nextHeaderStart = sessionIdx + 1 < sessions.length
+                ? findBBLSessionHeaderStart(buffer, sessionIdx + 1)
+                : -1;
+            const sessionEnd = nextHeaderStart >= 0 ? nextHeaderStart : buffer.length;
+
+            const decoder = new FrameDecoder(config);
+            const { frames } = decoder.decodeFrames(buffer, headerEnd, 0, sessionEnd);
+            if (!frames || frames.length === 0) {
+                this.analysisResult =
+                    "ERROR: No frames decoded from blackbox file. The file may be corrupt or use an unsupported format.";
+                return;
+            }
+
+            const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1}: ` : "";
+            this.analysisResult = prefix + formatAnalysisResult(analyzeLog(frames, this.motorTemp));
+        },
+
+        /** Called by the session dropdown — re-analyzes the selected session. */
+        runBBLSession(sessionIdx) {
+            if (!this.bblBuffer || !this.bblSessions.length) return;
+            try {
+                this._decodeBBLSession(sessionIdx, this.bblBuffer, this.bblSessions);
+            } catch (err) {
+                this.analysisResult = `ERROR: Failed to decode session ${sessionIdx + 1}: ${err.message}`;
+            }
         },
 
         onFileChange(e) {
@@ -1686,7 +1786,7 @@ export default {
                     try {
                         const buffer = new Uint8Array(e.target.result);
 
-                        // Parse ASCII header section
+                        // Parse ASCII header section — may contain multiple sessions
                         const headerParser = new BBLHeaderParser();
                         const sessions = headerParser.parseFile(buffer);
                         if (!sessions || sessions.length === 0) {
@@ -1694,28 +1794,19 @@ export default {
                                 "ERROR: Could not parse blackbox header. Make sure this is a valid Betaflight blackbox file.";
                             return;
                         }
-                        const config = sessions[0];
 
-                        // Locate start of binary frame data
-                        const headerEnd = findBBLBinaryStart(buffer);
-                        if (headerEnd === 0) {
-                            this.analysisResult = "ERROR: Could not locate frame data in blackbox file.";
-                            return;
+                        // Store for re-use when the user switches sessions
+                        this.bblBuffer = buffer;
+                        this.bblSessions = sessions;
+                        this.bblSelectedSession = 0;
+
+                        if (sessions.length > 1) {
+                            this.analysisResult = `Found ${sessions.length} flight sessions. Showing Session 1 — use the dropdown above to select another.`;
                         }
 
-                        // Decode binary frames
-                        const decoder = new FrameDecoder(config);
-                        const { frames } = decoder.decodeFrames(buffer, headerEnd, 0);
-                        if (!frames || frames.length === 0) {
-                            this.analysisResult =
-                                "ERROR: No frames decoded from blackbox file. The file may be corrupt or use an unsupported format.";
-                            return;
-                        }
-
-                        // Decoded frame objects use the same field keys as CSV rows
-                        this.analysisResult = formatAnalysisResult(analyzeLog(frames, motorTemp));
+                        this._decodeBBLSession(0, buffer, sessions);
                     } catch (err) {
-                        this.analysisResult = `ERROR: Failed to parse blackbox file: ${  err.message}`;
+                        this.analysisResult = `ERROR: Failed to parse blackbox file: ${err.message}`;
                     }
                 };
                 reader.onerror = () => {
@@ -1793,7 +1884,7 @@ export default {
             // Send each command with staggered delays
             let delay = 300;
             for (const cmd of commands) {
-                setTimeout(() => sendRaw(`${cmd  }\n`), delay);
+                setTimeout(() => sendRaw(`${cmd}\n`), delay);
                 delay += 60;
             }
 

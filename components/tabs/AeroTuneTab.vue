@@ -389,6 +389,36 @@
 
             <!-- ═══════════════ AUTO TUNE ═══════════════ -->
             <div v-show="activeView === 'autotune'" class="at-view">
+                <!-- Prop size selector -->
+                <div class="at-panel at-prop-selector">
+                    <div class="at-panel-header">
+                        PROP SIZE
+                        <span
+                            class="at-tip"
+                            @mouseenter="
+                                showTip(
+                                    $event,
+                                    'Select your prop diameter. This sets smart defaults for sweep frequency range and shake amplitude. You can still override them in Advanced Settings.',
+                                )
+                            "
+                            @mouseleave="hideTip"
+                            >ⓘ</span
+                        >
+                    </div>
+                    <div class="at-panel-body">
+                        <div class="at-prop-btns">
+                            <button
+                                v-for="size in [3, 4, 5, 6, 7, 8, 9, 10]"
+                                :key="size"
+                                :class="['at-prop-btn', { active: chirpPropInch === size }]"
+                                @click="chirpPropInch = size"
+                            >
+                                {{ size }}"
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Axis amplitude cards -->
                 <div class="at-chirp-cards">
                     <div class="at-panel at-chirp-card">
@@ -705,6 +735,40 @@ function interpolatePoints(x, points) {
         }
     }
     return 1;
+}
+
+// Prop-size defaults for chirp sweep parameters.
+// Each entry: [propInches, { startHz, endHz, easy, medium, hard }]
+const CHIRP_PROP_DEFAULTS = [
+    [3,  { startHz: 100, endHz: 800, easy: 150, medium: 250, hard: 400 }],
+    [5,  { startHz:  80, endHz: 600, easy: 120, medium: 230, hard: 350 }],
+    [7,  { startHz:  50, endHz: 400, easy:  80, medium: 150, hard: 250 }],
+    [10, { startHz:  30, endHz: 300, easy:  50, medium: 100, hard: 180 }],
+];
+
+function chirpDefaultsForProp(propInch) {
+    const pts = CHIRP_PROP_DEFAULTS;
+    if (propInch <= pts[0][0]) {
+        return { ...pts[0][1] };
+    }
+    if (propInch >= pts[pts.length - 1][0]) {
+        return { ...pts[pts.length - 1][1] };
+    }
+    for (let i = 0; i < pts.length - 1; i++) {
+        const [x0, d0] = pts[i];
+        const [x1, d1] = pts[i + 1];
+        if (propInch >= x0 && propInch <= x1) {
+            const t = (propInch - x0) / (x1 - x0);
+            return {
+                startHz:  Math.round(d0.startHz  + t * (d1.startHz  - d0.startHz)),
+                endHz:    Math.round(d0.endHz    + t * (d1.endHz    - d0.endHz)),
+                easy:     Math.round(d0.easy     + t * (d1.easy     - d0.easy)),
+                medium:   Math.round(d0.medium   + t * (d1.medium   - d0.medium)),
+                hard:     Math.round(d0.hard     + t * (d1.hard     - d0.hard)),
+            };
+        }
+    }
+    return { ...pts[pts.length - 1][1] };
 }
 
 // Voltage scalar — 4S (14.8 V) is the baseline (1.00).
@@ -1601,13 +1665,14 @@ export default {
             bblBuffer: null,
             tooltip: { visible: false, text: "", x: 0, y: 0 },
             // Auto Tune (chirp sweep)
+            chirpPropInch: 5,
             chirpPitch: 230,
             chirpRoll: 230,
             chirpYaw: 230,
             chirpPitchLevel: "MEDIUM",
             chirpRollLevel: "MEDIUM",
             chirpYawLevel: "MEDIUM",
-            chirpStartHz: 0.2,
+            chirpStartHz: 80,
             chirpEndHz: 600,
             chirpDuration: 20,
             chirpConfigured: false,
@@ -1637,6 +1702,9 @@ export default {
         },
         style(v) {
             this._persistInputs();
+        },
+        chirpPropInch(v) {
+            this.applyChirpPropDefaults(v);
         },
     },
 
@@ -1983,8 +2051,19 @@ export default {
             }
         },
 
+        applyChirpPropDefaults(propInch) {
+            const d = chirpDefaultsForProp(propInch);
+            this.chirpStartHz = d.startHz;
+            this.chirpEndHz = d.endHz;
+            // Re-apply current intensity level with prop-appropriate amplitudes
+            this.setChirpLevel("pitch", this.chirpPitchLevel);
+            this.setChirpLevel("roll", this.chirpRollLevel);
+            this.setChirpLevel("yaw", this.chirpYawLevel);
+        },
+
         setChirpLevel(axis, level) {
-            const AMPLITUDES = { EASY: 150, MEDIUM: 230, HARD: 350 };
+            const d = chirpDefaultsForProp(this.chirpPropInch);
+            const AMPLITUDES = { EASY: d.easy, MEDIUM: d.medium, HARD: d.hard };
             const amp = AMPLITUDES[level];
             if (axis === "pitch") {
                 this.chirpPitchLevel = level;

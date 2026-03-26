@@ -27,27 +27,27 @@ const CHART_HEIGHT = 260;
 // ─── DSP math helpers ────────────────────────────────────────────────────────
 
 function pt1Mag(f, fc) {
-    if (fc <= 0 || f === 0) return 1;
+    if (fc <= 0 || f === 0) { return 1; }
     return 1 / Math.sqrt(1 + (f / fc) ** 2);
 }
 
 /** PT2: cascade of two PT1 stages (amplitude = pt1²) */
 function pt2Mag(f, fc) {
-    if (fc <= 0 || f === 0) return 1;
+    if (fc <= 0 || f === 0) { return 1; }
     const r = f / fc;
     return 1 / (1 + r * r);
 }
 
 /** PT3: cascade of three PT1 stages */
 function pt3Mag(f, fc) {
-    if (fc <= 0 || f === 0) return 1;
+    if (fc <= 0 || f === 0) { return 1; }
     const r = f / fc;
     return Math.pow(1 / (1 + r * r), 1.5);
 }
 
 /** BIQUAD: 2nd-order Butterworth lowpass |H|² = 1/(1 + (f/fc)⁴) */
 function biquadMag(f, fc) {
-    if (fc <= 0 || f === 0) return 1;
+    if (fc <= 0 || f === 0) { return 1; }
     const r = f / fc;
     return 1 / Math.sqrt(1 + r ** 4);
 }
@@ -72,8 +72,8 @@ function lpfMag(f, fc, type) {
  * H(f) = |fn² – f²| / √((fn²–f²)² + (fn·f/Q)²)
  */
 function notchMagQ(f, fcenter, Q) {
-    if (fcenter <= 0 || Q <= 0) return 1;
-    if (f === 0) return 1;
+    if (fcenter <= 0 || Q <= 0) { return 1; }
+    if (f === 0) { return 1; }
     const fn2 = fcenter * fcenter;
     const f2 = f * f;
     const diff = fn2 - f2;
@@ -87,13 +87,13 @@ function notchMagQ(f, fcenter, Q) {
  * Q is derived as: Q = fcenter / (2·(fcenter − fcutoff))
  */
 function notchMagCutoff(f, fcenter, fcutoff) {
-    if (fcenter <= 0 || fcutoff <= 0 || fcutoff >= fcenter) return 1;
+    if (fcenter <= 0 || fcutoff <= 0 || fcutoff >= fcenter) { return 1; }
     const Q = fcenter / (2 * (fcenter - fcutoff));
     return notchMagQ(f, fcenter, Q);
 }
 
 function toDb(mag) {
-    if (mag <= 0) return DB_MIN;
+    if (mag <= 0) { return DB_MIN; }
     const db = 20 * Math.log10(Math.max(mag, 1e-10));
     return Math.max(DB_MIN, Math.min(DB_MAX, db));
 }
@@ -237,10 +237,12 @@ function computeCurves(state) {
 // ─── D3 rendering ─────────────────────────────────────────────────────────────
 
 function renderChart(state) {
-    if (!chartSvg.value || !chartContainer.value) return;
+    if (!chartSvg.value || !chartContainer.value) { return; }
 
     const containerWidth = chartContainer.value.clientWidth || 800;
-    if (containerWidth < 10) { return; }
+    if (containerWidth < 10) {
+        return;
+    }
 
     const margin = { top: 28, right: 24, bottom: 52, left: 62 };
     const width = containerWidth - margin.left - margin.right;
@@ -415,7 +417,9 @@ function renderChart(state) {
 
     // ── Legend ──
     const legendItems = curves.filter((c) => c.label);
-    if (legendItems.length === 0) { return; }
+    if (legendItems.length === 0) {
+        return;
+    }
 
     const LEGEND_ITEM_H = 17;
     const LEGEND_W = 210;

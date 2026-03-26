@@ -667,7 +667,9 @@ const FF_BY_STYLE = {
 
 function interpolateKV(kv) {
     kv = Number.parseFloat(kv);
-    if (KV_BASELINE[kv] !== undefined) { return KV_BASELINE[kv]; }
+    if (KV_BASELINE[kv] !== undefined) {
+        return KV_BASELINE[kv];
+    }
     const sorted = Object.keys(KV_BASELINE)
         .map(Number)
         .sort((a, b) => b - a);
@@ -690,8 +692,12 @@ function interpolateKV(kv) {
 
 // Linear interpolation through a sorted [x, y] point table.
 function interpolatePoints(x, points) {
-    if (x <= points[0][0]) { return points[0][1]; }
-    if (x >= points[points.length - 1][0]) { return points[points.length - 1][1]; }
+    if (x <= points[0][0]) {
+        return points[0][1];
+    }
+    if (x >= points[points.length - 1][0]) {
+        return points[points.length - 1][1];
+    }
     for (let i = 0; i < points.length - 1; i++) {
         if (x >= points[i][0] && x <= points[i + 1][0]) {
             const t = (x - points[i][0]) / (points[i + 1][0] - points[i][0]);
@@ -755,7 +761,9 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
     voltage = Number.parseFloat(voltage);
     prop = Number.parseFloat(prop);
     weight = Number.parseFloat(weight);
-    if (Number.isNaN(kv) || Number.isNaN(voltage) || Number.isNaN(prop) || Number.isNaN(weight)) { return null; }
+    if (Number.isNaN(kv) || Number.isNaN(voltage) || Number.isNaN(prop) || Number.isNaN(weight)) {
+        return null;
+    }
 
     // Base P at 5"/4S scale — only KV, style, and weight contribute here.
     const rawBase = interpolateKV(kv) * (FLYING_STYLES[style] || 1) * (1 + ((weight - 500) / 2000) * 0.15);
@@ -797,11 +805,21 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
 
 function filterRecommendation(prop) {
     prop = Number.parseFloat(prop);
-    if (prop <= 3) { return { hz: 450, low: 400, high: 500, note: "Small / Micro" }; }
-    if (prop <= 4) { return { hz: 380, low: 350, high: 420, note: "4-inch" }; }
-    if (prop <= 5.5) { return { hz: 300, low: 280, high: 350, note: "5-inch (most common)" }; }
-    if (prop <= 7) { return { hz: 250, low: 220, high: 280, note: "6–7 inch" }; }
-    if (prop <= 10) { return { hz: 180, low: 150, high: 220, note: "8–10 inch" }; }
+    if (prop <= 3) {
+        return { hz: 450, low: 400, high: 500, note: "Small / Micro" };
+    }
+    if (prop <= 4) {
+        return { hz: 380, low: 350, high: 420, note: "4-inch" };
+    }
+    if (prop <= 5.5) {
+        return { hz: 300, low: 280, high: 350, note: "5-inch (most common)" };
+    }
+    if (prop <= 7) {
+        return { hz: 250, low: 220, high: 280, note: "6–7 inch" };
+    }
+    if (prop <= 10) {
+        return { hz: 180, low: 150, high: 220, note: "8–10 inch" };
+    }
     return { hz: 120, low: 100, high: 150, note: '10"+ Large' };
 }
 
@@ -818,13 +836,17 @@ function parseBlackboxCSV(text) {
             break;
         }
     }
-    if (headerIdx === -1) { return null; }
+    if (headerIdx === -1) {
+        return null;
+    }
 
     const headers = lines[headerIdx].split(",").map((h) => h.trim().replaceAll(/^"|"$/g, ""));
     const rows = [];
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const parts = lines[i].split(",");
-        if (parts.length < 2) { continue; }
+        if (parts.length < 2) {
+            continue;
+        }
         const row = {};
         headers.forEach((h, idx) => {
             const raw = (parts[idx] || "").trim();
@@ -838,10 +860,18 @@ function parseBlackboxCSV(text) {
 
 // Display labels for tracking ratios (not used in scoring)
 function trackingLabel(ratio) {
-    if (ratio === null) { return "NO DATA"; }
-    if (ratio >= 0.98 && ratio <= 1.02) { return "EXCELLENT"; }
-    if (ratio >= 0.92 && ratio <= 1.08) { return "GOOD"; }
-    if (ratio >= 0.8 && ratio <= 1.2) { return "FAIR"; }
+    if (ratio === null) {
+        return "NO DATA";
+    }
+    if (ratio >= 0.98 && ratio <= 1.02) {
+        return "EXCELLENT";
+    }
+    if (ratio >= 0.92 && ratio <= 1.08) {
+        return "GOOD";
+    }
+    if (ratio >= 0.8 && ratio <= 1.2) {
+        return "FAIR";
+    }
     return "POOR";
 }
 
@@ -856,7 +886,9 @@ function analyzePGain(rows, axis, isLevelMode) {
     for (let i = 1; i + 30 < rows.length; i++) {
         const spPrev = Number(rows[i - 1][spKey] ?? 0);
         const spCurr = Number(rows[i][spKey] ?? 0);
-        if (Math.abs(spCurr - spPrev) <= 20) { continue; }
+        if (Math.abs(spCurr - spPrev) <= 20) {
+            continue;
+        }
         const absSP = Math.abs(spCurr);
         if (absSP < 5) {
             continue;
@@ -881,15 +913,18 @@ function analyzePGain(rows, axis, isLevelMode) {
                 break;
             }
         }
-        if (!lagFound) { lagFrames.push(30); }
+        if (!lagFound) {
+            lagFrames.push(30);
+        }
 
         if (isLevelMode) {
             let crossings = 0;
             for (let j = 1; j <= 20 && peakFrame + j < rows.length; j++) {
-                const e1 =
-                    Number(rows[peakFrame + j - 1][gyroKey] ?? 0) - Number(rows[peakFrame + j - 1][spKey] ?? 0);
+                const e1 = Number(rows[peakFrame + j - 1][gyroKey] ?? 0) - Number(rows[peakFrame + j - 1][spKey] ?? 0);
                 const e2 = Number(rows[peakFrame + j][gyroKey] ?? 0) - Number(rows[peakFrame + j][spKey] ?? 0);
-                if (e1 * e2 < 0) { crossings++; }
+                if (e1 * e2 < 0) {
+                    crossings++;
+                }
             }
             zeroCrossingCounts.push(crossings);
         }
@@ -912,7 +947,9 @@ function analyzeDGain(rows, axis) {
     for (let i = 1; i + 21 < rows.length; i++) {
         const spPrev = Number(rows[i - 1][spKey] ?? 0);
         const spCurr = Number(rows[i][spKey] ?? 0);
-        if (Math.abs(spCurr - spPrev) <= 20 || Math.abs(spCurr) < 5) { continue; }
+        if (Math.abs(spCurr - spPrev) <= 20 || Math.abs(spCurr) < 5) {
+            continue;
+        }
 
         let peakFrame = i,
             peakGyro = Math.abs(Number(rows[i][gyroKey] ?? 0));
@@ -928,13 +965,17 @@ function analyzeDGain(rows, axis) {
         for (let j = 1; j <= 20 && peakFrame + j < rows.length; j++) {
             const e1 = Number(rows[peakFrame + j - 1][gyroKey] ?? 0) - Number(rows[peakFrame + j - 1][spKey] ?? 0);
             const e2 = Number(rows[peakFrame + j][gyroKey] ?? 0) - Number(rows[peakFrame + j][spKey] ?? 0);
-            if (e1 * e2 < 0) { crossings++; }
+            if (e1 * e2 < 0) {
+                crossings++;
+            }
         }
         zeroCrossingCounts.push(crossings);
 
         const dVal = Math.abs(Number(rows[peakFrame][axisDKey] ?? 0));
         const pVal = Math.abs(Number(rows[peakFrame][axisPKey] ?? 0));
-        if (pVal > 1) { dToPRatios.push(dVal / pVal); }
+        if (pVal > 1) {
+            dToPRatios.push(dVal / pVal);
+        }
     }
 
     for (const row of rows) {
@@ -942,7 +983,9 @@ function analyzeDGain(rows, axis) {
             hiThrCount++;
             const unfilt = Math.abs(Number(row[gyroUnfKey] ?? 0));
             const filt = Math.abs(Number(row[gyroKey] ?? 0));
-            if (unfilt > filt * 2 && Math.abs(Number(row[axisDKey] ?? 0)) > 20) { hiThrDOscCount++; }
+            if (unfilt > filt * 2 && Math.abs(Number(row[axisDKey] ?? 0)) > 20) {
+                hiThrDOscCount++;
+            }
         }
     }
 
@@ -957,8 +1000,10 @@ function analyzeDGain(rows, axis) {
     };
 }
 
-function analyzeLog(rows, motorTemp = "WARM") {
-    if (!rows || rows.length === 0) { return { error: "No valid data found in log." }; }
+function analyzeLog(rows, motorTemp = "WARM", config = null) {
+    if (!rows || rows.length === 0) {
+        return { error: "No valid data found in log." };
+    }
 
     const totalFrames = rows.length;
     const hasRpmFilter = Object.keys(rows[0]).some((k) => /erpm/i.test(k) || /rpm\[/i.test(k));
@@ -1043,15 +1088,22 @@ function analyzeLog(rows, motorTemp = "WARM") {
     // Zero crossing score: sign changes in gyroADC[0] during active roll input
     let zeroCrossings = 0;
     for (let j = 1; j < activeGyroRoll.length; j++) {
-        if ((activeGyroRoll[j - 1] >= 0) !== (activeGyroRoll[j] >= 0)) { zeroCrossings++; }
+        if (activeGyroRoll[j - 1] >= 0 !== activeGyroRoll[j] >= 0) {
+            zeroCrossings++;
+        }
     }
     const zeroCrossingRate = activeGyroRoll.length > 0 ? (zeroCrossings / activeGyroRoll.length) * 100 : 0;
     const zcScore = Math.max(0, 100 - zeroCrossingRate * 10);
     let zcLabel;
-    if (zeroCrossingRate < 1) { zcLabel = "EXCELLENT"; }
-    else if (zeroCrossingRate < 3) { zcLabel = "GOOD"; }
-    else if (zeroCrossingRate < 10) { zcLabel = "FAIR"; }
-    else { zcLabel = "POOR"; }
+    if (zeroCrossingRate < 1) {
+        zcLabel = "EXCELLENT";
+    } else if (zeroCrossingRate < 3) {
+        zcLabel = "GOOD";
+    } else if (zeroCrossingRate < 10) {
+        zcLabel = "FAIR";
+    } else {
+        zcLabel = "POOR";
+    }
 
     // Propwash detection (kept for D gain notes only, not in weighted score)
     let propwashDetected = false;
@@ -1063,7 +1115,9 @@ function analyzeLog(rows, motorTemp = "WARM") {
             for (let j = 1; j <= 30 && i + j < rows.length; j++) {
                 const g1 = Number(rows[i + j - 1]["gyroADC[0]"] ?? 0);
                 const g2 = Number(rows[i + j]["gyroADC[0]"] ?? 0);
-                if (g1 * g2 < 0) { osc++; }
+                if (g1 * g2 < 0) {
+                    osc++;
+                }
             }
             if (osc >= 3) {
                 propwashDetected = true;
@@ -1075,23 +1129,36 @@ function analyzeLog(rows, motorTemp = "WARM") {
     const overallScore = trackingScore * 0.7 + filterScore * 0.15 + zcScore * 0.1 + 5;
 
     let overallLabel;
-    if (overallScore >= 85) { overallLabel = "EXCELLENT ✅"; }
-    else if (overallScore >= 70) { overallLabel = "GOOD ✅"; }
-    else if (overallScore >= 55) { overallLabel = "FAIR ⚠️"; }
-    else if (overallScore >= 40) { overallLabel = "WEAK ⚠️"; }
-    else { overallLabel = "VERY WEAK 🔴"; }
+    if (overallScore >= 85) {
+        overallLabel = "EXCELLENT ✅";
+    } else if (overallScore >= 70) {
+        overallLabel = "GOOD ✅";
+    } else if (overallScore >= 55) {
+        overallLabel = "FAIR ⚠️";
+    } else if (overallScore >= 40) {
+        overallLabel = "WEAK ⚠️";
+    } else {
+        overallLabel = "VERY WEAK 🔴";
+    }
     if (insufficientHiThrottle && overallScore >= 70) {
         overallLabel += " (unconfirmed — insufficient hi-throttle data)";
     }
 
     // Vibration level: score >= 70 overrides to ADEQUATE, else from avg_raw (>1400)
     let vibLevel;
-    if (overallScore >= 70) { vibLevel = "ADEQUATE ✓"; }
-    else if (avgRaw < 15) { vibLevel = "CLEAN ✓"; }
-    else if (avgRaw < 20) { vibLevel = "GOOD ✓"; }
-    else if (avgRaw < 30) { vibLevel = "FAIR"; }
-    else if (avgRaw < 50) { vibLevel = "WEAK ⚠"; }
-    else { vibLevel = "VERY WEAK 🔴"; }
+    if (overallScore >= 70) {
+        vibLevel = "ADEQUATE ✓";
+    } else if (avgRaw < 15) {
+        vibLevel = "CLEAN ✓";
+    } else if (avgRaw < 20) {
+        vibLevel = "GOOD ✓";
+    } else if (avgRaw < 30) {
+        vibLevel = "FAIR";
+    } else if (avgRaw < 50) {
+        vibLevel = "WEAK ⚠";
+    } else {
+        vibLevel = "VERY WEAK 🔴";
+    }
 
     // Filter action text
     let filterAction;
@@ -1117,7 +1184,9 @@ function analyzeLog(rows, motorTemp = "WARM") {
     const ANGLE_MODE_FLAG = 2;
     let levelModeFrames = 0;
     for (const row of rows) {
-        if (Number(row["flightModeFlags"] ?? 0) & ANGLE_MODE_FLAG) { levelModeFrames++; }
+        if (Number(row["flightModeFlags"] ?? 0) & ANGLE_MODE_FLAG) {
+            levelModeFrames++;
+        }
     }
     const isLevelMode = rows.length > 0 && levelModeFrames / rows.length > 0.5;
 
@@ -1213,7 +1282,9 @@ function analyzeLog(rows, motorTemp = "WARM") {
     } else if (motorTemp === "COOL") {
         dAction += "\nD gain may have headroom — could increase slightly (motors COOL after flight).";
     }
-    if (propwashDetected) { dAction += "\nPropwash detected — increase D by 3–5 or check filtering."; }
+    if (propwashDetected) {
+        dAction += "\nPropwash detected — increase D by 3–5 or check filtering.";
+    }
 
     // ── POST-PROCESS FILTER DISPLAY FOR GOOD/EXCELLENT OVERALL ───────────────
     if (overallScore >= 70 && filterSufficient) {
@@ -1221,7 +1292,35 @@ function analyzeLog(rows, motorTemp = "WARM") {
             ? "RPM filter detected (eRPM data present) — it is active and helping suppress motor harmonics."
             : "Enable RPM filter — most effective filter available, requires bidirectional DSHOT.";
         filterAction = `Filters are adequate for this tune. No changes recommended.\nFresh props recommended before tuning — damaged props create false noise in logs.\n${rpmLine}`;
-        if (vibLevel === "VERY WEAK 🔴") { vibLevel = "ADEQUATE ✓"; }
+        if (vibLevel === "VERY WEAK 🔴") {
+            vibLevel = "ADEQUATE ✓";
+        }
+    }
+
+    // ── D_MAX FLIGHT 2 REFINEMENT ─────────────────────────────────────────────
+    // Detect when D_Max is at Betaflight defaults and overshoot is moderate —
+    // the D-term ceiling may be too permissive, causing unnecessary D amplification.
+    const avgOvershootAll =
+        allOvershoots.length > 0 ? allOvershoots.reduce((a, b) => a + b, 0) / allOvershoots.length : null;
+
+    let dMaxRefinement = null;
+    if (config && avgOvershootAll !== null && avgOvershootAll >= 25 && avgOvershootAll <= 35) {
+        const dMaxRoll = config.pids?.roll?.[3] ?? null;
+        const dMaxPitch = config.pids?.pitch?.[3] ?? null;
+        const dMaxAdvance = config.pids?.dMaxAdvance ?? null;
+        // BF 4.x defaults: d_max roll=40, pitch=46, d_max_advance=20
+        if (dMaxRoll !== null && dMaxPitch !== null &&
+            Math.abs(dMaxRoll - 40) <= 3 && Math.abs(dMaxPitch - 46) <= 3) {
+            dMaxRefinement = {
+                dMaxRoll,
+                dMaxPitch,
+                dMaxAdvance: dMaxAdvance ?? 20,
+                suggestRoll: 35,
+                suggestPitch: 38,
+                suggestAdvance: 10,
+                avgOvershoot: avgOvershootAll,
+            };
+        }
     }
 
     return {
@@ -1252,6 +1351,8 @@ function analyzeLog(rows, motorTemp = "WARM") {
         dVerdict,
         dAction,
         motorTemp,
+        config,
+        dMaxRefinement,
     };
 }
 
@@ -1306,6 +1407,62 @@ function formatAnalysisResult(r) {
     }
 
     lines.push(SEP, `  ROLL/PITCH D : ${r.dVerdict}`, SEP, r.dAction);
+
+    // ── Flight 2 refinement — D_Max headroom ──────────────────────────────────
+    if (r.dMaxRefinement) {
+        const ref = r.dMaxRefinement;
+        lines.push(
+            ``,
+            SEP,
+            `  FLIGHT 2 REFINEMENT — D_MAX HEADROOM`,
+            SEP,
+            `D_Max is at Betaflight defaults (Roll: ${ref.dMaxRoll}, Pitch: ${ref.dMaxPitch}).`,
+            `With ${ref.avgOvershoot.toFixed(1)}% average overshoot the D-term ceiling may be too permissive during fast moves.`,
+            ``,
+            `Suggested CLI changes:`,
+            `  set d_max = ${ref.suggestRoll},${ref.suggestPitch},0  # was ${ref.dMaxRoll},${ref.dMaxPitch},0`,
+            `  set d_max_advance = ${ref.suggestAdvance}  # was ${ref.dMaxAdvance}`,
+            ``,
+            `Re-fly the test pattern and re-analyze. If overshoot drops below 15% these values are correct.`,
+        );
+    }
+
+    // ── Suggested CLI commands (populated from BBL header values) ─────────────
+    if (r.config) {
+        const cfg = r.config;
+        const cliLines = [];
+        const needsFilterWork = r.vibLevel === "WEAK ⚠" || r.vibLevel === "FAIR" || r.vibLevel === "VERY WEAK 🔴";
+
+        if (needsFilterWork) {
+            // Gyro LPF2 — only suggest when it is active (0 = disabled, ≥500 = effectively off)
+            const lpf2Hz = cfg.gyroFilters?.lowpass2Hz;
+            if (lpf2Hz !== null && lpf2Hz !== undefined && lpf2Hz > 0 && lpf2Hz < 500) {
+                let reduction = 0;
+                if (r.vibLevel === "VERY WEAK 🔴") { reduction = 100; }
+                else if (r.vibLevel === "WEAK ⚠") { reduction = 50; }
+                else if (r.vibLevel === "FAIR") { reduction = 30; }
+                if (reduction > 0) {
+                    const suggested = Math.max(80, lpf2Hz - reduction);
+                    cliLines.push(`  set gyro_lpf2_static_hz = ${suggested}  # was ${lpf2Hz}`);
+                }
+            }
+
+            // Dynamic notch max Hz — only when notch is active (count > 0)
+            const dynCount = cfg.dynamicNotch?.count;
+            const dynMaxHz = cfg.dynamicNotch?.maxHz;
+            const dynMinHz = cfg.dynamicNotch?.minHz;
+            if (dynCount !== null && dynCount !== undefined && dynCount > 0 &&
+                dynMaxHz !== null && dynMaxHz !== undefined && dynMaxHz > 0) {
+                const suggestedMax = Math.max((dynMinHz ?? 100) + 100, dynMaxHz - 100);
+                cliLines.push(`  set dyn_notch_max_hz = ${suggestedMax}  # was ${dynMaxHz}`);
+            }
+        }
+
+        if (cliLines.length > 0) {
+            lines.push(``, SEP, `  SUGGESTED CLI COMMANDS`, SEP, ...cliLines, ``);
+        }
+    }
+
     return lines.join("\n");
 }
 
@@ -1327,11 +1484,15 @@ function findSessionMarkerPos(buf, sessionIndex) {
         if (buf[pos] === BBL_MARKER_BYTES[0]) {
             let isMarker = BBL_MARKER_BYTES.length + pos <= len;
             for (let j = 1; isMarker && j < BBL_MARKER_BYTES.length; j++) {
-                if (buf[pos + j] !== BBL_MARKER_BYTES[j]) { isMarker = false; }
+                if (buf[pos + j] !== BBL_MARKER_BYTES[j]) {
+                    isMarker = false;
+                }
             }
             if (isMarker) {
                 sessionsFound++;
-                if (sessionsFound === sessionIndex) { return pos; }
+                if (sessionsFound === sessionIndex) {
+                    return pos;
+                }
             }
         }
         pos++;
@@ -1343,7 +1504,9 @@ function findSessionMarkerPos(buf, sessionIndex) {
 // i.e. the position immediately after the last 'H ...' header line of that session.
 function findBBLBinaryStart(buf, sessionIndex = 0) {
     const sessionHeaderStart = findSessionMarkerPos(buf, sessionIndex);
-    if (sessionHeaderStart === -1) { return 0; } // session not found
+    if (sessionHeaderStart === -1) {
+        return 0;
+    } // session not found
 
     // Phase 2: scan forward from the session marker, collecting 'H ' lines.
     // The first non-'H ' line marks the start of binary data.
@@ -1353,10 +1516,16 @@ function findBBLBinaryStart(buf, sessionIndex = 0) {
 
     while (pos < len) {
         const lineStart = pos;
-        while (pos < len && buf[pos] !== 0x0a) { pos++; } // find \n
-        if (pos < len) { pos++; } // skip \n
+        while (pos < len && buf[pos] !== 0x0a) {
+            pos++;
+        } // find \n
+        if (pos < len) {
+            pos++;
+        } // skip \n
 
-        if (pos - lineStart < 2) { continue; }
+        if (pos - lineStart < 2) {
+            continue;
+        }
 
         if (buf[lineStart] === 0x48 && buf[lineStart + 1] === 0x20) {
             // 'H ' line — still in header
@@ -1692,7 +1861,9 @@ export default {
         },
 
         copyValues() {
-            if (!this.showResults) { return; }
+            if (!this.showResults) {
+                return;
+            }
             const p = this.pids,
                 fr = this.filterRec;
             const text = [
@@ -1739,12 +1910,14 @@ export default {
             }
 
             const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1}: ` : "";
-            this.analysisResult = prefix + formatAnalysisResult(analyzeLog(frames, this.motorTemp));
+            this.analysisResult = prefix + formatAnalysisResult(analyzeLog(frames, this.motorTemp, config));
         },
 
         /** Called by the session dropdown — re-analyzes the selected session. */
         runBBLSession(sessionIdx) {
-            if (!this.bblBuffer || !this.bblSessions.length) { return; }
+            if (!this.bblBuffer || !this.bblSessions.length) {
+                return;
+            }
             try {
                 this._decodeBBLSession(sessionIdx, this.bblBuffer, this.bblSessions);
             } catch (err) {
@@ -1754,13 +1927,17 @@ export default {
 
         onFileChange(e) {
             const file = e.target.files[0];
-            if (!file) { return; }
+            if (!file) {
+                return;
+            }
             this.csvFile = file;
             this.fileName = file.name;
         },
 
         async analyzeFile() {
-            if (!this.csvFile) { return; }
+            if (!this.csvFile) {
+                return;
+            }
             this.analysisResult = "Parsing file…";
             const motorTemp = this.motorTemp;
             const file = this.csvFile;

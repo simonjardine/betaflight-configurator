@@ -33,7 +33,9 @@ export default defineComponent({
         let rafId = null;
 
         const scheduleDraw = () => {
-            if (rafId !== null) { return; }
+            if (rafId !== null) {
+                return;
+            }
             rafId = requestAnimationFrame(() => {
                 rafId = null;
                 draw();
@@ -41,7 +43,9 @@ export default defineComponent({
         };
 
         const draw = () => {
-            if (!svgRef.value || !containerRef.value) { return; }
+            if (!svgRef.value || !containerRef.value) {
+                return;
+            }
 
             const svg = d3.select(svgRef.value);
             svg.selectAll("*").remove();
@@ -157,7 +161,9 @@ export default defineComponent({
 
                 ringDefs.forEach(({ r, color, dash, labelAngle }) => {
                     const rPx = r * scale;
-                    if (rPx < 1) { return; }
+                    if (rPx < 1) {
+                        return;
+                    }
 
                     svg.append("circle")
                         .attr("cx", cx)
@@ -258,7 +264,9 @@ export default defineComponent({
         onMounted(() => {
             scheduleDraw();
             ro = new ResizeObserver(scheduleDraw);
-            if (containerRef.value) { ro.observe(containerRef.value); }
+            if (containerRef.value) {
+                ro.observe(containerRef.value);
+            }
         });
         onUnmounted(() => {
             ro?.disconnect();

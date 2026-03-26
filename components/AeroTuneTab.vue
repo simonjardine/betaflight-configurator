@@ -740,10 +740,10 @@ function interpolatePoints(x, points) {
 // Prop-size defaults for chirp sweep parameters.
 // Each entry: [propInches, { startHz, endHz, easy, medium, hard }]
 const CHIRP_PROP_DEFAULTS = [
-    [3,  { startHz: 100, endHz: 800, easy: 150, medium: 250, hard: 400 }],
-    [5,  { startHz:  80, endHz: 600, easy: 120, medium: 230, hard: 350 }],
-    [7,  { startHz:  50, endHz: 400, easy:  80, medium: 150, hard: 250 }],
-    [10, { startHz:  30, endHz: 300, easy:  50, medium: 100, hard: 180 }],
+    [3, { startHz: 100, endHz: 800, easy: 150, medium: 250, hard: 400 }],
+    [5, { startHz: 80, endHz: 600, easy: 120, medium: 230, hard: 350 }],
+    [7, { startHz: 50, endHz: 400, easy: 80, medium: 150, hard: 250 }],
+    [10, { startHz: 30, endHz: 300, easy: 50, medium: 100, hard: 180 }],
 ];
 
 function chirpDefaultsForProp(propInch) {
@@ -760,11 +760,11 @@ function chirpDefaultsForProp(propInch) {
         if (propInch >= x0 && propInch <= x1) {
             const t = (propInch - x0) / (x1 - x0);
             return {
-                startHz:  Math.round(d0.startHz  + t * (d1.startHz  - d0.startHz)),
-                endHz:    Math.round(d0.endHz    + t * (d1.endHz    - d0.endHz)),
-                easy:     Math.round(d0.easy     + t * (d1.easy     - d0.easy)),
-                medium:   Math.round(d0.medium   + t * (d1.medium   - d0.medium)),
-                hard:     Math.round(d0.hard     + t * (d1.hard     - d0.hard)),
+                startHz: Math.round(d0.startHz + t * (d1.startHz - d0.startHz)),
+                endHz: Math.round(d0.endHz + t * (d1.endHz - d0.endHz)),
+                easy: Math.round(d0.easy + t * (d1.easy - d0.easy)),
+                medium: Math.round(d0.medium + t * (d1.medium - d0.medium)),
+                hard: Math.round(d0.hard + t * (d1.hard - d0.hard)),
             };
         }
     }
@@ -1373,8 +1373,7 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         const dMaxPitch = config.pids?.pitch?.[3] ?? null;
         const dMaxAdvance = config.pids?.dMaxAdvance ?? null;
         // BF 4.x defaults: d_max roll=40, pitch=46, d_max_advance=20
-        if (dMaxRoll !== null && dMaxPitch !== null &&
-            Math.abs(dMaxRoll - 40) <= 3 && Math.abs(dMaxPitch - 46) <= 3) {
+        if (dMaxRoll !== null && dMaxPitch !== null && Math.abs(dMaxRoll - 40) <= 3 && Math.abs(dMaxPitch - 46) <= 3) {
             dMaxRefinement = {
                 dMaxRoll,
                 dMaxPitch,
@@ -1502,9 +1501,13 @@ function formatAnalysisResult(r) {
             const lpf2Hz = cfg.gyroFilters?.lowpass2Hz;
             if (lpf2Hz !== null && lpf2Hz !== undefined && lpf2Hz > 0 && lpf2Hz < 500) {
                 let reduction = 0;
-                if (r.vibLevel === "VERY WEAK 🔴") { reduction = 100; }
-                else if (r.vibLevel === "WEAK ⚠") { reduction = 50; }
-                else if (r.vibLevel === "FAIR") { reduction = 30; }
+                if (r.vibLevel === "VERY WEAK 🔴") {
+                    reduction = 100;
+                } else if (r.vibLevel === "WEAK ⚠") {
+                    reduction = 50;
+                } else if (r.vibLevel === "FAIR") {
+                    reduction = 30;
+                }
                 if (reduction > 0) {
                     const suggested = Math.max(80, lpf2Hz - reduction);
                     cliLines.push(`  set gyro_lpf2_static_hz = ${suggested}  # was ${lpf2Hz}`);
@@ -1515,8 +1518,14 @@ function formatAnalysisResult(r) {
             const dynCount = cfg.dynamicNotch?.count;
             const dynMaxHz = cfg.dynamicNotch?.maxHz;
             const dynMinHz = cfg.dynamicNotch?.minHz;
-            if (dynCount !== null && dynCount !== undefined && dynCount > 0 &&
-                dynMaxHz !== null && dynMaxHz !== undefined && dynMaxHz > 0) {
+            if (
+                dynCount !== null &&
+                dynCount !== undefined &&
+                dynCount > 0 &&
+                dynMaxHz !== null &&
+                dynMaxHz !== undefined &&
+                dynMaxHz > 0
+            ) {
                 const suggestedMax = Math.max((dynMinHz ?? 100) + 100, dynMaxHz - 100);
                 cliLines.push(`  set dyn_notch_max_hz = ${suggestedMax}  # was ${dynMaxHz}`);
             }

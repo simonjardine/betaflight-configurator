@@ -244,9 +244,7 @@
                     <div class="at-panel" style="margin-bottom: 12px">
                         <div class="at-panel-header">WORKFLOW</div>
                         <div class="at-panel-body" style="font-size: 12px; color: var(--subtleText); line-height: 1.8">
-                            1. Fly your quad with the calculated PIDs &nbsp;·&nbsp; 2. Export Blackbox CSV from
-                            Betaflight Blackbox Explorer &nbsp;·&nbsp; 3. Load it below &nbsp;·&nbsp; 4. Analyze filter
-                            effectiveness at high throttle
+                            {{ workflowInstructions }}
                         </div>
                     </div>
 
@@ -268,7 +266,9 @@
                             </div>
 
                             <div class="at-file-row">
-                                <label class="at-file-label" @click="$refs.fileInput.click()">Select BFL or CSV</label>
+                                <button type="button" class="at-file-label" @click="$refs.fileInput.click()">
+                                    Select BBL / BFL / CSV
+                                </button>
                                 <input
                                     type="file"
                                     ref="fileInput"
@@ -313,42 +313,44 @@
                         </li>
                     </ul>
 
-                    <h3>STEP 2: FLY THE TEST PATTERN</h3>
-                    <p>Enable Blackbox before flying:</p>
+                    <h3>STEP 2: CONFIGURE BLACKBOX</h3>
                     <ul>
-                        <li>Configuration tab → Blackbox → Enable, Device = SD Card, Rate = 1/2</li>
-                        <li>Set logging rate to minimum 1kHz, ideally 2kHz for best frequency resolution.</li>
-                        <li>Enable: Gyro, Gyro (Unfiltered), Motor, PID, RC Commands, RPM, Setpoint, Accelerometer</li>
+                        <li>In Betaflight, go to Configuration → Blackbox → Enable, Device = SD Card.</li>
+                        <li>
+                            Set Blackbox logging rate to 1/2 or better — higher rates give better frequency resolution
+                            for the analyzer.
+                        </li>
+                        <li>Enable: Gyro, Gyro (Unfiltered), Motor, PID, RC Commands, RPM, Setpoint, Accelerometer.</li>
                         <li><strong>Betaflight 4.5+:</strong> raw gyro is always logged automatically.</li>
                         <li>
                             <strong>Betaflight 4.3/4.4:</strong> set Debug Mode to <code>GYRO_SCALED</code> to capture
                             unfiltered gyro data.
                         </li>
-                    </ul>
-                    <p>Before flying:</p>
-                    <ul>
                         <li>
                             Use fresh propellers — damaged props introduce false noise and will give inaccurate results.
                         </li>
                     </ul>
-                    <p>Flight pattern:</p>
+
+                    <h3>STEP 3: FLY THE TEST PATTERN</h3>
                     <ul>
+                        <li>Level mode or Acro mode both work — LOS or FPV.</li>
                         <li>
-                            Level mode: Full left stick hold 3-5 seconds, pause, full right stick hold 3-5 seconds,
-                            pause, full forward hold 3-5 seconds, pause, full back hold 3-5 seconds
+                            Level mode: full left stick hold 1–1.5 seconds, pause, full right, pause, full forward,
+                            pause, full back.
+                        </li>
+                        <li>Acro mode: sharp direct inputs at 20° and 45°, with brief pauses between each.</li>
+                        <li>
+                            Aim for a 2 minute flight. Fly through the full throttle range — the Analyzer needs data
+                            across all throttle levels to give an accurate result.
                         </li>
                     </ul>
 
-                    <h3>STEP 3: ANALYZE THE LOG</h3>
+                    <h3>STEP 4: ANALYZE THE LOG</h3>
                     <ul>
-                        <li>
-                            Pull the SD card, open the <code>.BBL</code> file in
-                            <a href="https://blackbox.betaflight.com/" target="_blank"
-                                ><strong>Betaflight Blackbox Explorer</strong></a
-                            >
-                        </li>
-                        <li>Export as CSV (File → Export CSV)</li>
-                        <li>Come back to AeroTune Analyzer tab, load your CSV and click ANALYZE</li>
+                        <li>In Betaflight, go to the Blackbox tab and click USB Storage Mode.</li>
+                        <li>Drag your .bfl file from the FC storage to your desktop.</li>
+                        <li>Unplug the FC, then plug it back in and open Betaflight.</li>
+                        <li>In the AeroTune tab, click Select BBL / BFL, choose your .bfl file and click ANALYZE.</li>
                     </ul>
 
                     <h3>INTERPRETING RESULTS</h3>
@@ -551,10 +553,15 @@
 
                 <!-- Advanced settings (collapsed by default) -->
                 <div class="at-advanced-section">
-                    <div class="at-advanced-toggle" @click="advancedOpen = !advancedOpen">
+                    <button
+                        type="button"
+                        class="at-advanced-toggle"
+                        @click="advancedOpen = !advancedOpen"
+                        :aria-expanded="advancedOpen"
+                    >
                         ⚙ ADVANCED SETTINGS
                         <span class="at-advanced-chevron" :class="{ open: advancedOpen }">▶</span>
-                    </div>
+                    </button>
                     <div v-if="advancedOpen" class="at-advanced-body">
                         <div class="at-form-row">
                             <label
@@ -614,14 +621,30 @@
                 <div class="at-panel at-chirp-instructions">
                     <div class="at-panel-header">📋 FLIGHT PROCEDURE</div>
                     <div class="at-panel-body">
+                        <p style="color: #ffe66d; font-weight: bold; margin-bottom: 8px">
+                            ⚠️ CAUTION: CHIRP IS EXPERIMENTAL
+                        </p>
+                        <p style="font-size: 12px; margin-bottom: 10px">
+                            The chirp sweep feature is currently untested in real-world conditions. Fly in a large open
+                            area, maintain visual line of sight or fly FPV, be prepared to disarm immediately, and fly
+                            at your own risk.
+                        </p>
                         <ol>
-                            <li>Props <strong>OFF</strong> — configure above and hit button</li>
-                            <li>Props <strong>ON</strong> — assign <code>CHIRP</code> switch in Modes tab</li>
                             <li>
-                                Hover 10m+, flip switch <strong>once</strong> → firmware runs Pitch, Roll, then Yaw
-                                automatically
+                                Connected via USB — configure chirp settings above, hit button, then assign a dedicated
+                                <code>CHIRP</code> switch in the Modes tab.
                             </li>
-                            <li>Land, plug in USB → drop your BFL file into <strong>STEP 2: LOG ANALYZER</strong></li>
+                            <li>Unplug USB and fly.</li>
+                            <li>Hover to 5m or more — switch to Level mode if desired, or fly FPV.</li>
+                            <li>
+                                Flip the <code>CHIRP</code> switch once — firmware runs Pitch, Roll, then Yaw
+                                automatically (~20 seconds per axis).
+                            </li>
+                            <li>To abort: disarm immediately.</li>
+                            <li>
+                                Land, plug in USB → drop your .bfl file into
+                                <strong>STEP 4: LOG ANALYZER</strong>
+                            </li>
                         </ol>
                     </div>
                 </div>
@@ -697,6 +720,10 @@ const FF_BY_STYLE = {
 
 function interpolateKV(kv) {
     kv = Number.parseFloat(kv);
+    const kvKeys = Object.keys(KV_BASELINE).map(Number);
+    const minKey = Math.min(...kvKeys);
+    const maxKey = Math.max(...kvKeys);
+    kv = Math.max(minKey, Math.min(maxKey, kv));
     if (KV_BASELINE[kv] !== undefined) {
         return KV_BASELINE[kv];
     }
@@ -852,10 +879,12 @@ function calculatePIDs(kv, voltage, prop, weight, style) {
     return {
         roll_p: clamp(Math.round(rollBase * fullMult), 20, 90),
         roll_i: Math.round(rollBase * 1.902 * halfMult),
+        roll_d: Math.round(rollBase * dr * dMult),
         dMax_roll: Math.round(rollBase * dr * dMult),
         roll_f: Math.round(ff.roll_f * ffMult),
         pitch_p: clamp(Math.round(pitchBase * fullMult), 20, 90),
         pitch_i: Math.round(pitchBase * 1.902 * halfMult),
+        pitch_d: Math.round(pitchBase * dr * dMult),
         dMax_pitch: Math.round(pitchBase * dr * dMult),
         pitch_f: Math.round(ff.pitch_f * ffMult),
         yaw_p: clamp(Math.round(yawBase * fullMult), 15, 70),
@@ -1694,23 +1723,36 @@ export default {
         canApply() {
             return this.showResults && CONFIGURATOR.connectionValid;
         },
+        workflowInstructions() {
+            return "1. Calculate baseline PIDs · 2. Configure Blackbox · 3. Fly the test pattern · 4. Load your .bfl file and Analyze";
+        },
     },
 
     watch: {
         kv(v) {
             this._persistInputs();
+            this.showResults = false;
+            this.pids = {};
         },
         voltage(v) {
             this._persistInputs();
+            this.showResults = false;
+            this.pids = {};
         },
         prop(v) {
             this._persistInputs();
+            this.showResults = false;
+            this.pids = {};
         },
         weight(v) {
             this._persistInputs();
+            this.showResults = false;
+            this.pids = {};
         },
         style(v) {
             this._persistInputs();
+            this.showResults = false;
+            this.pids = {};
         },
         chirpPropInch(v) {
             this.applyChirpPropDefaults(v);
@@ -1799,29 +1841,30 @@ export default {
   <li>Click <strong>APPLY PIDs TO FC</strong> to write them directly to the PID Tuning tab, or use <strong>COPY ALL VALUES</strong> to copy them to the clipboard.</li>
 </ul>
 
-<h3>STEP 2: FLY THE TEST PATTERN</h3>
-<p>Enable Blackbox before flying:</p>
+<h3>STEP 2: CONFIGURE BLACKBOX</h3>
 <ul>
-  <li>Configuration tab → Blackbox → Enable, Device = SD Card, Rate = 1/2</li>
-  <li>Set logging rate to minimum 1kHz, ideally 2kHz for best frequency resolution.</li>
-  <li>Enable: Gyro, Gyro (Unfiltered), Motor, PID, RC Commands, RPM, Setpoint, Accelerometer</li>
+  <li>In Betaflight, go to Configuration → Blackbox → Enable, Device = SD Card.</li>
+  <li>Set Blackbox logging rate to 1/2 or better — higher rates give better frequency resolution for the analyzer.</li>
+  <li>Enable: Gyro, Gyro (Unfiltered), Motor, PID, RC Commands, RPM, Setpoint, Accelerometer.</li>
   <li><strong>Betaflight 4.5+:</strong> raw gyro is always logged automatically.</li>
   <li><strong>Betaflight 4.3/4.4:</strong> set Debug Mode to <code>GYRO_SCALED</code> to capture unfiltered gyro data.</li>
-</ul>
-<p>Before flying:</p>
-<ul>
   <li>Use fresh propellers — damaged props introduce false noise and will give inaccurate results.</li>
 </ul>
-<p>Flight pattern:</p>
+
+<h3>STEP 3: FLY THE TEST PATTERN</h3>
 <ul>
-  <li>Level mode: Full left stick hold 3-5 seconds, pause, full right stick hold 3-5 seconds, pause, full forward hold 3-5 seconds, pause, full back hold 3-5 seconds</li>
+  <li>Level mode or Acro mode both work — LOS or FPV.</li>
+  <li>Level mode: full left stick hold 1–1.5 seconds, pause, full right, pause, full forward, pause, full back.</li>
+  <li>Acro mode: sharp direct inputs at 20° and 45°, with brief pauses between each.</li>
+  <li>Aim for a 2 minute flight. Fly through the full throttle range — the Analyzer needs data across all throttle levels to give an accurate result.</li>
 </ul>
 
-<h3>STEP 3: ANALYZE THE LOG</h3>
+<h3>STEP 4: ANALYZE THE LOG</h3>
 <ul>
-  <li>Pull the SD card, open the <code>.BBL</code> file in <a href="https://blackbox.betaflight.com/" target="_blank" rel="noopener"><strong>Betaflight Blackbox Explorer</strong></a></li>
-  <li>Export as CSV (File → Export CSV)</li>
-  <li>Come back to AeroTune Analyzer tab, load your CSV and click ANALYZE</li>
+  <li>In Betaflight, go to the Blackbox tab and click USB Storage Mode.</li>
+  <li>Drag your .bfl file from the FC storage to your desktop.</li>
+  <li>Unplug the FC, then plug it back in and open Betaflight.</li>
+  <li>In the AeroTune tab, click Select BBL / BFL, choose your .bfl file and click ANALYZE.</li>
 </ul>
 
 <h3>INTERPRETING RESULTS</h3>
@@ -1883,10 +1926,10 @@ export default {
             if (FC.PIDS && FC.PIDS.length >= 3) {
                 FC.PIDS[0][0] = p.roll_p;
                 FC.PIDS[0][1] = p.roll_i;
-                FC.PIDS[0][2] = p.d_min_roll;
+                FC.PIDS[0][2] = p.roll_d;
                 FC.PIDS[1][0] = p.pitch_p;
                 FC.PIDS[1][1] = p.pitch_i;
-                FC.PIDS[1][2] = p.d_min_pitch;
+                FC.PIDS[1][2] = p.pitch_d;
                 FC.PIDS[2][0] = p.yaw_p;
                 FC.PIDS[2][1] = p.yaw_i;
                 FC.PIDS[2][2] = p.yaw_d;
@@ -2007,6 +2050,9 @@ export default {
             if (!file) {
                 return;
             }
+            this.bblBuffer = null;
+            this.bblSessions = [];
+            this.bblSelectedSession = 0;
             this.csvFile = file;
             this.fileName = file.name;
         },
@@ -2093,10 +2139,24 @@ export default {
                 return;
             }
 
+            const { chirpStartHz, chirpEndHz, chirpDuration } = this;
+            if (
+                !Number.isFinite(chirpStartHz) ||
+                !Number.isFinite(chirpEndHz) ||
+                chirpStartHz >= chirpEndHz ||
+                !Number.isFinite(chirpDuration) ||
+                chirpDuration < 1 ||
+                chirpDuration > 60
+            ) {
+                this.chirpConfirmText = "ERROR: Invalid chirp sweep settings.";
+                this.chirpConfigured = true;
+                return;
+            }
+
             this.chirpConfigured = false;
 
-            const startDeciHz = Math.round(this.chirpStartHz * 10);
-            const endDeciHz = Math.round(this.chirpEndHz * 10);
+            const startDeciHz = Math.round(chirpStartHz * 10);
+            const endDeciHz = Math.round(chirpEndHz * 10);
 
             const commands = [
                 `set chirp_amplitude_pitch = ${this.chirpPitch}`,
@@ -2104,7 +2164,7 @@ export default {
                 `set chirp_amplitude_yaw = ${this.chirpYaw}`,
                 `set chirp_frequency_start_deci_hz = ${startDeciHz}`,
                 `set chirp_frequency_end_deci_hz = ${endDeciHz}`,
-                `set chirp_time_seconds = ${this.chirpDuration}`,
+                `set chirp_time_seconds = ${chirpDuration}`,
                 `save`,
             ];
 
@@ -2120,18 +2180,28 @@ export default {
             new Uint8Array(enterBuf)[0] = 0x23; // '#'
             serial.send(enterBuf);
 
-            // Send each command with staggered delays
-            let delay = 300;
-            for (const cmd of commands) {
-                setTimeout(() => sendRaw(`${cmd}\n`), delay);
-                delay += 60;
-            }
-
-            // Show confirmation after all commands dispatched
-            setTimeout(() => {
-                this.chirpConfirmText = commands.join("\n");
-                this.chirpConfigured = true;
-            }, delay + 100);
+            // Wait for CLI to become active before dispatching commands
+            const MAX_WAIT_MS = 3000;
+            const POLL_INTERVAL_MS = 50;
+            let elapsed = 0;
+            const poll = setInterval(() => {
+                elapsed += POLL_INTERVAL_MS;
+                if (CONFIGURATOR.cliActive || CONFIGURATOR.cliValid) {
+                    clearInterval(poll);
+                    let delay = 0;
+                    for (const cmd of commands) {
+                        setTimeout(() => sendRaw(`${cmd}\n`), delay);
+                        delay += 60;
+                    }
+                    setTimeout(() => {
+                        this.chirpConfirmText = commands.join("\n");
+                        this.chirpConfigured = true;
+                    }, delay + 100);
+                } else if (elapsed >= MAX_WAIT_MS) {
+                    clearInterval(poll);
+                    this.chirpConfirmText = "ERROR: CLI did not become active. Check connection and try again.";
+                }
+            }, POLL_INTERVAL_MS);
         },
     },
 };

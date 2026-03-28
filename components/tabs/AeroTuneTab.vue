@@ -2977,8 +2977,7 @@ export default {
                 AMP_MAX = ampMax;
 
             const xForI = (i) => PAD_L + ((i - i0) / iRange) * plotW;
-            const yForA = (a) =>
-                PAD_T + plotH - ((clamp(a, AMP_MIN, AMP_MAX) - AMP_MIN) / (AMP_MAX - AMP_MIN)) * plotH;
+            const yForA = (a) => PAD_T + plotH - ((clamp(a, AMP_MIN, AMP_MAX) - AMP_MIN) / (AMP_MAX - AMP_MIN)) * plotH;
 
             // Downsample for performance
             const step = iRange > 1000 ? Math.ceil(iRange / 1000) : 1;
@@ -3199,7 +3198,10 @@ export default {
     letter-spacing: 0.5px;
     cursor: pointer;
     text-transform: uppercase;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition:
+        background 0.15s,
+        color 0.15s,
+        border-color 0.15s;
 }
 .at-sysid-axis-tab:hover {
     color: #aaa;
@@ -3226,7 +3228,10 @@ export default {
     font-size: 11px;
     font-family: monospace;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition:
+        background 0.15s,
+        color 0.15s,
+        border-color 0.15s;
 }
 .at-sysid-zoom-btn:hover {
     color: #aaa;

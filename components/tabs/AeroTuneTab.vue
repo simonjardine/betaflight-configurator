@@ -452,6 +452,7 @@
                                             <span>
                                                 P {{ sysidResult.axes[axisName].currentP }} →
                                                 {{ sysidResult.axes[axisName].pidSuggest.suggestP }}
+                                                {{ sysidResult.axes[axisName].pidSuggest.direction }}
                                             </span>
                                             <span v-if="sysidResult.axes[axisName].currentD !== null">
                                                 &nbsp; D {{ sysidResult.axes[axisName].currentD }} →
@@ -460,6 +461,10 @@
                                             <span class="at-sysid-pid-reason">
                                                 &nbsp; ({{ sysidResult.axes[axisName].pidSuggest.reason }})
                                             </span>
+                                        </template>
+                                        <template v-else-if="sysidResult.axes[axisName]?.phaseMarginInvalid">
+                                            <span class="at-sysid-pid-axis">{{ axisName.toUpperCase() }}:</span>
+                                            <span>— re-fly needed</span>
                                         </template>
                                         <template
                                             v-else-if="sysidResult.axes[axisName] && !sysidResult.axes[axisName].error"
@@ -1977,7 +1982,7 @@ function _getCrossoverSearchWindow(propInches) {
  * searchWindow: { min, max } Hz — only search within this band.
  * Returns { phaseMargin, gainMargin, gcFreq, pcFreq } — any may be null.
  */
-function _computeStabilityMargins(freqAxis, magDB, phaseDeg, rawPhaseDeg, searchWindow, coherence) {
+function _computeStabilityMargins(freqAxis, magDB, phaseDeg, rawPhaseDeg, searchWindow, coherence, axisName) {
     const winMin = searchWindow?.min ?? 5;
     const winMax = searchWindow?.max ?? 100;
 
@@ -1986,6 +1991,7 @@ function _computeStabilityMargins(freqAxis, magDB, phaseDeg, rawPhaseDeg, search
     let pcFreq = null,
         gainMargin = null;
     let gcCoherenceLow = false;
+    let phaseMarginInvalid = false;
 
     // Gain crossover: descending 0 dB crossing within window, searched HIGH→LOW
     // Collect indices inside the window first, then iterate in reverse.
@@ -2000,36 +2006,26 @@ function _computeStabilityMargins(freqAxis, magDB, phaseDeg, rawPhaseDeg, search
         if (magDB[j] >= 0 && magDB[i] < 0) {
             const t = magDB[j] / (magDB[j] - magDB[i]);
             gcFreq = freqAxis[j] + t * (freqAxis[i] - freqAxis[j]);
-            // Phase margin: use raw atan2 phase, NOT the unwrapped accumulation.
-            // If the raw phase wraps between these two bins, pick the bin closer to 0 dB.
+            // Phase margin: use raw atan2 at bin j directly — NOT interpolated.
+            // atan2Result = Math.atan2(hIm, hRe) * 180 / Math.PI at the crossover bin.
             const rawJ = rawPhaseDeg[j];
-            const rawI = rawPhaseDeg[i];
-            const rawPhaseAtGC =
-                Math.abs(rawI - rawJ) > 180
-                    ? Math.abs(magDB[j]) < Math.abs(magDB[i])
-                        ? rawJ
-                        : rawI
-                    : rawJ + t * (rawI - rawJ);
-            phaseMargin = 180 + rawPhaseAtGC;
+            const atan2Result = rawJ;
+            phaseMargin = 180 + atan2Result;
 
-            // Debug logging at crossover bin — reconstruct H(f) re/im from mag+phase
-            const rawPhaseRad = (rawJ * Math.PI) / 180;
-            const hMag = magDB[j] > -60 ? Math.pow(10, magDB[j] / 20) : 0;
-            const dbgRe = hMag * Math.cos(rawPhaseRad);
-            const dbgIm = hMag * Math.sin(rawPhaseRad);
+            // Debug logging — verify atan2 value and phase margin formula
+            const axis = axisName ?? "unknown";
             console.log(
-                `[AeroTune] Gain crossover bin: index=${j}, freq=${freqAxis[j].toFixed(2)}Hz` +
-                    ` | H(f) re=${dbgRe.toFixed(6)}, im=${dbgIm.toFixed(6)}` +
-                    ` | atan2=${rawJ.toFixed(2)}°` +
-                    ` | phaseMargin=${phaseMargin.toFixed(2)}°`,
+                `[AeroTune] axis=${axis} atan2=${atan2Result.toFixed(2)}°` +
+                    ` phaseMargin=180+(${atan2Result.toFixed(2)})=${phaseMargin.toFixed(2)}°`,
             );
 
-            // Phase margin must be in [0°, 180°] — clamp and warn if outside
+            // Phase margin must be in [0°, 180°] — null (not clamp) if outside
             if (phaseMargin < 0 || phaseMargin > 180) {
                 console.warn(
-                    `[AeroTune] Phase margin ${phaseMargin.toFixed(1)}° outside valid range [0°, 180°] — clamping.`,
+                    `[AeroTune] ${axis}: phase margin ${phaseMargin.toFixed(1)}° outside valid range [0°, 180°] — marking unreliable.`,
                 );
-                phaseMargin = Math.min(180, Math.max(0, phaseMargin));
+                phaseMarginInvalid = true;
+                phaseMargin = null;
             }
 
             // Coherence check at crossover bin
@@ -2064,41 +2060,62 @@ function _computeStabilityMargins(freqAxis, magDB, phaseDeg, rawPhaseDeg, search
         }
     }
 
-    return { phaseMargin, gainMargin, gcFreq, pcFreq, gcCoherenceLow };
+    return { phaseMargin, gainMargin, gcFreq, pcFreq, gcCoherenceLow, phaseMarginInvalid };
 }
 
 /**
  * Synthesise PID adjustments from stability margins and current gains.
- * baselineHz: prop-size midpoint of the crossover search window (replaces hardcoded 80 Hz).
- * Returns { suggestP, suggestD, reason }.
+ * baselineHz: prop-size midpoint of the crossover search window.
+ *
+ * P direction: scale = PM / 45 (clamped 0.7–1.5).
+ *   PM > 45° → over-damped/sluggish → increase P (scale > 1).
+ *   PM < 45° → under-damped/oscillating → decrease P (scale < 1).
+ *
+ * D direction:
+ *   PM < 40° → increase D aggressively (+25%) to add damping.
+ *   PM 40–50° → D unchanged (in target band).
+ *   PM > 50° AND gcFreq > baseline → increase D slightly (+15%).
+ *
+ * Returns { suggestP, suggestD, direction, reason }.
  */
 function _synthesizePID(currentP, currentD, margins, baselineHz) {
     const TARGET_PM = 45;
     const baseline = baselineHz ?? 80;
     let suggestP = currentP;
     let suggestD = currentD;
+    let direction = "=";
     const parts = [];
 
-    if (margins.phaseMargin !== null && margins.phaseMargin > 0) {
-        const factor = clamp(TARGET_PM / margins.phaseMargin, 0.7, 1.3);
+    if (margins.phaseMargin !== null) {
+        const pm = margins.phaseMargin;
+        // High PM → quad is sluggish → scale > 1 → increase P
+        const factor = clamp(pm / TARGET_PM, 0.7, 1.5);
         suggestP = Math.round(currentP * factor);
-        parts.push(`PM ${margins.phaseMargin.toFixed(1)}°→45° (×${factor.toFixed(2)})`);
-    }
-
-    if (margins.gcFreq !== null && currentD !== null && currentD > 0) {
-        const gcHz = margins.gcFreq;
-        if (gcHz < baseline) {
-            const dFactor = clamp(1 + (baseline - gcHz) / (baseline * 2), 1.0, 1.3);
-            suggestD = Math.round(currentD * dFactor);
-            parts.push(`low GC ${gcHz.toFixed(0)}Hz → increase D ×${dFactor.toFixed(2)}`);
-        } else if (gcHz > baseline * 2.5) {
-            const dFactor = clamp(1 - (gcHz - baseline * 2.5) / (baseline * 5), 0.7, 1.0);
-            suggestD = Math.round(currentD * dFactor);
-            parts.push(`high GC ${gcHz.toFixed(0)}Hz → decrease D ×${dFactor.toFixed(2)}`);
+        direction = factor > 1.01 ? "↑" : factor < 0.99 ? "↓" : "=";
+        if (pm > TARGET_PM) {
+            parts.push(`PM ${pm.toFixed(1)}° — under-tuned at hover, increase P`);
+        } else if (pm < TARGET_PM) {
+            parts.push(`PM ${pm.toFixed(1)}° — close to instability, reduce P`);
+        } else {
+            parts.push(`PM ${pm.toFixed(1)}° — at target`);
         }
     }
 
-    return { suggestP, suggestD, reason: parts.join("; ") || "within target margins" };
+    if (currentD !== null && currentD > 0 && margins.phaseMargin !== null) {
+        const pm = margins.phaseMargin;
+        if (pm < 40) {
+            // Under-damped — add damping aggressively
+            suggestD = Math.round(currentD * 1.25);
+            parts.push(`D +25% (low PM — add damping)`);
+        } else if (pm > 50 && margins.gcFreq !== null && margins.gcFreq > baseline) {
+            // Stable with high GC frequency — small D increase is safe
+            suggestD = Math.round(currentD * 1.15);
+            parts.push(`D +15% (GC ${margins.gcFreq.toFixed(0)}Hz > baseline)`);
+        }
+        // PM 40–50°: D unchanged
+    }
+
+    return { suggestP, suggestD, direction, reason: parts.join("; ") || "within target margins" };
 }
 
 /**
@@ -2216,21 +2233,23 @@ function runSysID(frames, config, propInches) {
         }
 
         // Stability margins — only search within the prop-size-specific window
-        const { phaseMargin, gainMargin, gcFreq, pcFreq, gcCoherenceLow } = _computeStabilityMargins(
-            freqAxis,
-            filtMag,
-            filtPhase,
-            rawPhaseDeg,
-            searchWindow,
-            filtCoh,
-        );
+        const { phaseMargin, gainMargin, gcFreq, pcFreq, gcCoherenceLow, phaseMarginInvalid } =
+            _computeStabilityMargins(
+                freqAxis,
+                filtMag,
+                filtPhase,
+                rawPhaseDeg,
+                searchWindow,
+                filtCoh,
+                ax.name.toUpperCase(),
+            );
 
         // Current PID values from BBL header
         const currentP = config.pids?.[ax.pidKey]?.[0] ?? null;
         const currentD = config.pids?.[ax.pidKey]?.[2] ?? null;
 
         const pidSuggest =
-            currentP !== null
+            currentP !== null && !phaseMarginInvalid
                 ? _synthesizePID(currentP, currentD, { phaseMargin, gainMargin, gcFreq, pcFreq }, baselineHz)
                 : null;
 
@@ -2240,6 +2259,7 @@ function runSysID(frames, config, propInches) {
             phaseDeg: filtPhase,
             coherence: filtCoh,
             phaseMargin,
+            phaseMarginInvalid,
             gainMargin,
             gcFreq,
             pcFreq,

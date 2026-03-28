@@ -296,159 +296,50 @@
                                     ⚡ CHIRP / SYSID LOG DETECTED — running frequency response analysis
                                 </div>
 
-                                <!-- Roll tracking ratio + Bode plot -->
-                                <div
-                                    v-if="sysidResult.axes.roll && !sysidResult.axes.roll.error"
-                                    class="at-sysid-axis-block"
-                                >
-                                    <canvas
-                                        ref="trackRatioRoll"
-                                        class="at-track-ratio-canvas"
-                                        width="580"
-                                        height="140"
-                                    ></canvas>
-                                    <div class="at-chirp-td-caption">
-                                        100% = perfect tracking. Drops as frequency increases and quad can no longer
-                                        follow.
-                                    </div>
-                                    <div class="at-sysid-axis-label">ROLL — Frequency Response (Bode)</div>
-                                    <canvas ref="bodePlotRoll" class="at-bode-canvas" width="580" height="180"></canvas>
-                                </div>
-                                <div v-else-if="sysidResult.axes.roll?.error" class="at-sysid-axis-err">
-                                    ROLL: {{ sysidResult.axes.roll.error }}
+                                <!-- Axis selector tabs -->
+                                <div class="at-sysid-axis-tabs">
+                                    <button
+                                        v-for="ax in sysidAvailableAxes"
+                                        :key="ax.name"
+                                        class="at-sysid-axis-tab"
+                                        :class="{ active: sysidActiveAxis === ax.name }"
+                                        :style="{ '--ax-color': ax.color }"
+                                        @click="selectSysIDAxis(ax.name)"
+                                    >
+                                        {{ ax.label }}
+                                    </button>
                                 </div>
 
-                                <!-- Pitch tracking ratio + Bode plot -->
-                                <div
-                                    v-if="sysidResult.axes.pitch && !sysidResult.axes.pitch.error"
-                                    class="at-sysid-axis-block"
-                                >
-                                    <canvas
-                                        ref="trackRatioPitch"
-                                        class="at-track-ratio-canvas"
-                                        width="580"
-                                        height="140"
-                                    ></canvas>
-                                    <div class="at-chirp-td-caption">
-                                        100% = perfect tracking. Drops as frequency increases and quad can no longer
-                                        follow.
-                                    </div>
-                                    <div class="at-sysid-axis-label">PITCH — Frequency Response (Bode)</div>
-                                    <canvas
-                                        ref="bodePlotPitch"
-                                        class="at-bode-canvas"
-                                        width="580"
-                                        height="180"
-                                    ></canvas>
+                                <!-- Single setpoint vs gyro overlay chart -->
+                                <canvas
+                                    ref="chirpOverlayCanvas"
+                                    class="at-chirp-overlay-canvas"
+                                    width="580"
+                                    height="260"
+                                ></canvas>
+
+                                <!-- Chart legend + hint -->
+                                <div class="at-chirp-overlay-legend">
+                                    Coloured line = setpoint (command). White line = gyro (actual response).
                                 </div>
-                                <div v-else-if="sysidResult.axes.pitch?.error" class="at-sysid-axis-err">
-                                    PITCH: {{ sysidResult.axes.pitch.error }}
+                                <div class="at-chirp-overlay-hint">
+                                    Where the white trace stops following the coloured trace is your bandwidth limit.
                                 </div>
 
-                                <!-- Yaw tracking ratio + Bode plot -->
-                                <div
-                                    v-if="sysidResult.axes.yaw && !sysidResult.axes.yaw.error"
-                                    class="at-sysid-axis-block"
-                                >
-                                    <canvas
-                                        ref="trackRatioYaw"
-                                        class="at-track-ratio-canvas"
-                                        width="580"
-                                        height="140"
-                                    ></canvas>
-                                    <div class="at-chirp-td-caption">
-                                        100% = perfect tracking. Drops as frequency increases and quad can no longer
-                                        follow.
-                                    </div>
-                                    <div class="at-sysid-axis-label">YAW — Frequency Response (Bode)</div>
-                                    <canvas ref="bodePlotYaw" class="at-bode-canvas" width="580" height="180"></canvas>
-                                </div>
-                                <div v-else-if="sysidResult.axes.yaw?.error" class="at-sysid-axis-err">
-                                    YAW: {{ sysidResult.axes.yaw.error }}
-                                </div>
-
-                                <!-- Stability margins table -->
-                                <div class="at-sysid-table-wrap">
-                                    <div class="at-sysid-table-title">STABILITY MARGINS</div>
-                                    <div v-if="sysidResult.searchWindow" class="at-sysid-search-window-note">
-                                        Search window: {{ sysidResult.searchWindow.min }}–{{
-                                            sysidResult.searchWindow.max
-                                        }}
-                                        Hz (based on {{ sysidResult.propInches ?? "?" }}" prop)
-                                    </div>
-                                    <table class="at-sysid-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Axis</th>
-                                                <th>Phase Margin</th>
-                                                <th>Gain Margin</th>
-                                                <th>GC Freq (Hz)</th>
-                                                <th>PC Freq (Hz)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="axisName in ['roll', 'pitch', 'yaw']" :key="axisName">
-                                                <td>{{ axisName.toUpperCase() }}</td>
-                                                <template
-                                                    v-if="
-                                                        sysidResult.axes[axisName] && !sysidResult.axes[axisName].error
-                                                    "
-                                                >
-                                                    <td
-                                                        :class="
-                                                            stabilityClass(sysidResult.axes[axisName].phaseMargin, 'pm')
-                                                        "
-                                                    >
-                                                        <template
-                                                            v-if="sysidResult.axes[axisName].phaseMargin !== null"
-                                                        >
-                                                            {{
-                                                                sysidResult.axes[axisName].phaseMargin.toFixed(1) + "°"
-                                                            }}
-                                                        </template>
-                                                        <template v-else>
-                                                            <span class="at-sysid-no-crossover">
-                                                                No crossover found in expected range for
-                                                                {{ sysidResult.propInches ?? "?" }}" prop — try a longer
-                                                                sweep or check prop size selection on the AUTO TUNE tab.
-                                                            </span>
-                                                        </template>
-                                                    </td>
-                                                    <td
-                                                        :class="
-                                                            stabilityClass(sysidResult.axes[axisName].gainMargin, 'gm')
-                                                        "
-                                                    >
-                                                        {{
-                                                            sysidResult.axes[axisName].gainMargin !== null
-                                                                ? sysidResult.axes[axisName].gainMargin.toFixed(1) +
-                                                                  " dB"
-                                                                : "N/A"
-                                                        }}
-                                                    </td>
-                                                    <td>
-                                                        {{
-                                                            sysidResult.axes[axisName].gcFreq !== null
-                                                                ? sysidResult.axes[axisName].gcFreq.toFixed(1)
-                                                                : "N/A"
-                                                        }}
-                                                    </td>
-                                                    <td>
-                                                        {{
-                                                            sysidResult.axes[axisName].pcFreq !== null
-                                                                ? sysidResult.axes[axisName].pcFreq.toFixed(1)
-                                                                : "N/A"
-                                                        }}
-                                                    </td>
-                                                </template>
-                                                <template v-else>
-                                                    <td colspan="4">
-                                                        {{ sysidResult.axes[axisName]?.error || "N/A" }}
-                                                    </td>
-                                                </template>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                <!-- Zoom presets -->
+                                <div class="at-sysid-zoom-row">
+                                    <button
+                                        :class="['at-sysid-zoom-btn', { active: sysidZoom === 'full' }]"
+                                        @click="setSysIDZoom('full')"
+                                    >
+                                        Full sweep
+                                    </button>
+                                    <button
+                                        :class="['at-sysid-zoom-btn', { active: sysidZoom === 'zoomed' }]"
+                                        @click="setSysIDZoom('zoomed')"
+                                    >
+                                        Zoomed (middle 50%)
+                                    </button>
                                 </div>
 
                                 <!-- Frequency Response PID Output Table -->
@@ -2458,6 +2349,8 @@ export default {
             bblSelectedSession: 0,
             bblBuffer: null,
             sysidResult: null,
+            sysidActiveAxis: "roll",
+            sysidZoom: "full",
             tooltip: { visible: false, text: "", x: 0, y: 0 },
             // Auto Tune (chirp sweep)
             chirpPropInch: 5,
@@ -2516,6 +2409,15 @@ export default {
         canApplySysID() {
             return !!this.sysidResult && CONFIGURATOR.connectionValid;
         },
+        sysidAvailableAxes() {
+            if (!this.sysidResult) return [];
+            const defs = [
+                { name: "roll", label: "Roll", color: "#ff4444" },
+                { name: "pitch", label: "Pitch", color: "#4488ff" },
+                { name: "yaw", label: "Yaw", color: "#44cc66" },
+            ];
+            return defs.filter((d) => this.sysidResult.axes[d.name] && !this.sysidResult.axes[d.name].error);
+        },
     },
 
     watch: {
@@ -2548,11 +2450,13 @@ export default {
             this.applyChirpPropDefaults(v);
         },
         sysidResult(val) {
-            if (val)
-                this.$nextTick(() => {
-                    this.renderBodePlots();
-                    this.renderTrackingRatio();
-                });
+            if (val) {
+                // Auto-select the first axis that has valid data
+                const axes = ["roll", "pitch", "yaw"];
+                this.sysidActiveAxis = axes.find((ax) => val.axes[ax] && !val.axes[ax].error) || "roll";
+                this.sysidZoom = "full";
+                this.$nextTick(() => this.renderChirpOverlay());
+            }
         },
     },
 
@@ -3014,38 +2918,30 @@ export default {
             }, POLL_INTERVAL_MS);
         },
 
-        /**
-         * Return a CSS class name for stability margin table cells.
-         * type: 'pm' (phase margin) or 'gm' (gain margin)
-         */
-        stabilityClass(value, type) {
-            if (value === null || value === undefined) return "";
-            if (type === "pm") {
-                if (value < 30) return "at-sysid-bad";
-                if (value > 70) return "at-sysid-warn";
-                return "at-sysid-ok";
-            }
-            if (type === "gm") {
-                if (value < 3) return "at-sysid-bad";
-                if (value < 6) return "at-sysid-warn";
-                return "at-sysid-ok";
-            }
-            return "";
+        /** Switch the active chirp axis and redraw. */
+        selectSysIDAxis(axName) {
+            this.sysidActiveAxis = axName;
+            this.$nextTick(() => this.renderChirpOverlay());
         },
 
-        /** Draw all three tracking-ratio canvases from this.sysidResult. */
-        renderTrackingRatio() {
-            const refMap = { roll: "trackRatioRoll", pitch: "trackRatioPitch", yaw: "trackRatioYaw" };
-            for (const [axName, refName] of Object.entries(refMap)) {
-                const canvas = this.$refs[refName];
-                const axData = this.sysidResult?.axes?.[axName];
-                if (!canvas || !axData || axData.error) continue;
-                this._drawTrackingRatio(canvas, axData, axName);
-            }
+        /** Switch zoom preset and redraw. */
+        setSysIDZoom(zoom) {
+            this.sysidZoom = zoom;
+            this.$nextTick(() => this.renderChirpOverlay());
         },
 
-        /** Draw gyro/setpoint tracking ratio (%) over time for one axis. */
-        _drawTrackingRatio(canvas, axData, axName) {
+        /** Render the setpoint vs gyro overlay chart for the active axis. */
+        renderChirpOverlay() {
+            const canvas = this.$refs.chirpOverlayCanvas;
+            if (!canvas || !this.sysidResult) return;
+            const axData = this.sysidResult.axes[this.sysidActiveAxis];
+            if (!axData || axData.error) return;
+            const colors = { roll: "#ff4444", pitch: "#4488ff", yaw: "#44cc66" };
+            this._drawChirpOverlay(canvas, axData, colors[this.sysidActiveAxis] || "#ffbb00", this.sysidZoom);
+        },
+
+        /** Draw setpoint (axis colour) vs gyro (white) time-domain overlay. */
+        _drawChirpOverlay(canvas, axData, axColor, zoom) {
             const { spSeg, gySeg, sampleRate } = axData;
             if (!spSeg || !gySeg || !sampleRate) return;
 
@@ -3062,59 +2958,57 @@ export default {
             const plotH = H - PAD_T - PAD_B;
 
             const N = spSeg.length;
-            const duration = N / sampleRate;
-            const RATIO_MIN = 0,
-                RATIO_MAX = 120;
 
-            const xForI = (i) => PAD_L + (i / (N - 1)) * plotW;
-            const yForR = (r) =>
-                PAD_T + plotH - ((clamp(r, RATIO_MIN, RATIO_MAX) - RATIO_MIN) / (RATIO_MAX - RATIO_MIN)) * plotH;
+            // Zoom window: full or middle 50%
+            const i0 = zoom === "zoomed" ? Math.floor(N * 0.25) : 0;
+            const i1 = zoom === "zoomed" ? Math.floor(N * 0.75) : N - 1;
+            const iRange = Math.max(1, i1 - i0);
+            const tStart = i0 / sampleRate;
+            const tEnd = i1 / sampleRate;
 
-            // Compute rolling-average tracking ratio (20-sample window)
-            const WIN = 20;
-            const ratios = new Float32Array(N).fill(NaN);
-            for (let i = 0; i < N; i++) {
-                let sum = 0,
-                    cnt = 0;
-                for (let j = Math.max(0, i - WIN + 1); j <= i; j++) {
-                    const sp = Math.abs(spSeg[j]);
-                    if (sp > 10) {
-                        sum += (Math.abs(gySeg[j]) / sp) * 100;
-                        cnt++;
-                    }
-                }
-                if (cnt > 0) ratios[i] = sum / cnt;
+            // Auto-scale amplitude from visible data
+            let ampMax = 50;
+            for (let i = i0; i <= i1; i++) {
+                const v = Math.max(Math.abs(spSeg[i]), Math.abs(gySeg[i]));
+                if (v > ampMax) ampMax = v;
             }
+            ampMax = Math.ceil(ampMax / 50) * 50;
+            const AMP_MIN = -ampMax,
+                AMP_MAX = ampMax;
+
+            const xForI = (i) => PAD_L + ((i - i0) / iRange) * plotW;
+            const yForA = (a) =>
+                PAD_T + plotH - ((clamp(a, AMP_MIN, AMP_MAX) - AMP_MIN) / (AMP_MAX - AMP_MIN)) * plotH;
+
+            // Downsample for performance
+            const step = iRange > 1000 ? Math.ceil(iRange / 1000) : 1;
 
             // Background
-            ctx.fillStyle = "#1a1a1a";
+            ctx.fillStyle = "#0d1117";
             ctx.fillRect(0, 0, W, H);
 
-            // Grid: 100% (green dashed) and 70% (amber dashed)
+            // Zero line (dashed)
+            ctx.strokeStyle = "#2a2a2a";
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = "rgba(0,210,80,0.5)";
             ctx.beginPath();
-            ctx.moveTo(PAD_L, yForR(100));
-            ctx.lineTo(W - PAD_R, yForR(100));
-            ctx.stroke();
-            ctx.strokeStyle = "rgba(255,187,0,0.5)";
-            ctx.beginPath();
-            ctx.moveTo(PAD_L, yForR(70));
-            ctx.lineTo(W - PAD_R, yForR(70));
+            ctx.moveTo(PAD_L, yForA(0));
+            ctx.lineTo(W - PAD_R, yForA(0));
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Faint 50% line
-            ctx.strokeStyle = "#333333";
-            ctx.beginPath();
-            ctx.moveTo(PAD_L, yForR(50));
-            ctx.lineTo(W - PAD_R, yForR(50));
-            ctx.stroke();
+            // Horizontal amplitude grid
+            ctx.strokeStyle = "#1c1c1c";
+            for (let a = -ampMax + 50; a < ampMax; a += 50) {
+                if (a === 0) continue;
+                ctx.beginPath();
+                ctx.moveTo(PAD_L, yForA(a));
+                ctx.lineTo(W - PAD_R, yForA(a));
+                ctx.stroke();
+            }
 
             // Vertical time grid
             const xTicks = 5;
-            ctx.strokeStyle = "#2a2a2a";
             for (let t = 0; t <= xTicks; t++) {
                 const xi = PAD_L + (t / xTicks) * plotW;
                 ctx.beginPath();
@@ -3124,229 +3018,65 @@ export default {
             }
 
             // Y-axis labels
-            ctx.fillStyle = "#888888";
+            ctx.fillStyle = "#555555";
             ctx.font = "10px monospace";
             ctx.textAlign = "right";
-            for (const r of [0, 50, 70, 100, 120]) {
-                ctx.fillText(`${r}%`, PAD_L - 4, yForR(r) + 3);
+            for (let a = -ampMax; a <= ampMax; a += 50) {
+                ctx.fillText(String(a), PAD_L - 4, yForA(a) + 3);
             }
+            ctx.fillStyle = "#444444";
+            ctx.font = "9px monospace";
+            ctx.textAlign = "left";
+            ctx.fillText("deg/s", 2, PAD_T + 8);
 
-            // X-axis labels
+            // X-axis time labels
+            ctx.fillStyle = "#555555";
+            ctx.font = "10px monospace";
             ctx.textAlign = "center";
             for (let t = 0; t <= xTicks; t++) {
-                const tSec = (t / xTicks) * duration;
+                const tSec = tStart + (t / xTicks) * (tEnd - tStart);
                 const xi = PAD_L + (t / xTicks) * plotW;
                 ctx.fillText(`${tSec.toFixed(1)}s`, xi, H - PAD_B + 14);
             }
 
-            // Chart title (inside canvas top-left)
-            ctx.fillStyle = "#aaaaaa";
-            ctx.font = "10px monospace";
-            ctx.textAlign = "left";
-            ctx.fillText(`${axName.toUpperCase()} — TRACKING RATIO (gyro following setpoint)`, PAD_L, PAD_T - 4);
-
-            // Reference labels on right edge
-            ctx.textAlign = "right";
-            ctx.fillStyle = "rgba(0,210,80,0.8)";
-            ctx.fillText("100%", W - PAD_R - 2, yForR(100) - 3);
-            ctx.fillStyle = "rgba(255,187,0,0.8)";
-            ctx.fillText("70%", W - PAD_R - 2, yForR(70) - 3);
-
-            // Draw ratio line with color segments
-            ctx.lineWidth = 1.5;
-            let prevX = null,
-                prevY = null,
-                prevValid = false;
-            for (let i = 0; i < N; i++) {
-                if (isNaN(ratios[i])) {
-                    prevValid = false;
-                    continue;
-                }
+            // Draw gyro trace first (white, behind setpoint)
+            ctx.strokeStyle = "rgba(255,255,255,0.65)";
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            let started = false;
+            for (let i = i0; i <= i1; i += step) {
                 const x = xForI(i);
-                const y = yForR(ratios[i]);
-                const r = ratios[i];
-                const color = r > 80 ? "#00d252" : r > 50 ? "#ffbb00" : "#ff4444";
-                if (!prevValid) {
-                    prevX = x;
-                    prevY = y;
-                    prevValid = true;
-                    continue;
+                const y = yForA(gySeg[i]);
+                if (!started) {
+                    ctx.moveTo(x, y);
+                    started = true;
+                } else {
+                    ctx.lineTo(x, y);
                 }
-                ctx.beginPath();
-                ctx.strokeStyle = color;
-                ctx.moveTo(prevX, prevY);
-                ctx.lineTo(x, y);
-                ctx.stroke();
-                prevX = x;
-                prevY = y;
             }
+            ctx.stroke();
+
+            // Draw setpoint trace on top (axis colour)
+            ctx.strokeStyle = axColor;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            started = false;
+            for (let i = i0; i <= i1; i += step) {
+                const x = xForI(i);
+                const y = yForA(spSeg[i]);
+                if (!started) {
+                    ctx.moveTo(x, y);
+                    started = true;
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
 
             // Border
-            ctx.strokeStyle = "#444444";
+            ctx.strokeStyle = "#2a2a2a";
             ctx.lineWidth = 1;
             ctx.strokeRect(PAD_L, PAD_T, plotW, plotH);
-        },
-
-        /** Draw all three Bode-plot canvases from this.sysidResult. */
-        renderBodePlots() {
-            const refMap = { roll: "bodePlotRoll", pitch: "bodePlotPitch", yaw: "bodePlotYaw" };
-            for (const [axName, refName] of Object.entries(refMap)) {
-                const canvas = this.$refs[refName];
-                const axData = this.sysidResult?.axes?.[axName];
-                if (!canvas || !axData || axData.error) continue;
-                this._drawBode(canvas, axData, axName);
-            }
-        },
-
-        /**
-         * Draw Bode magnitude plot (dB vs frequency, log scale).
-         * Low-coherence regions (< 0.6) are rendered at reduced opacity.
-         */
-        _drawBode(canvas, axData, _axName) {
-            const W = canvas.width;
-            const H = canvas.height;
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, W, H);
-
-            const PAD_L = 52,
-                PAD_R = 16,
-                PAD_T = 18,
-                PAD_B = 22;
-            const plotW = W - PAD_L - PAD_R;
-            const plotH = H - PAD_T - PAD_B;
-
-            const MAG_TOP = PAD_T;
-            const MAG_BOT = H - PAD_B;
-
-            const FREQ_LO = 1,
-                FREQ_HI = 500;
-            const MAG_MIN = -40,
-                MAG_MAX = 40;
-
-            const logLo = Math.log10(FREQ_LO);
-            const logHi = Math.log10(FREQ_HI);
-
-            const xForFreq = (f) => PAD_L + ((Math.log10(Math.max(f, FREQ_LO)) - logLo) / (logHi - logLo)) * plotW;
-            const yForMag = (m) => MAG_BOT - ((clamp(m, MAG_MIN, MAG_MAX) - MAG_MIN) / (MAG_MAX - MAG_MIN)) * plotH;
-
-            // Background
-            ctx.fillStyle = "#1a1a1a";
-            ctx.fillRect(0, 0, W, H);
-
-            // 0 dB reference line (dashed)
-            ctx.strokeStyle = "#333333";
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 4]);
-            ctx.beginPath();
-            ctx.moveTo(PAD_L, yForMag(0));
-            ctx.lineTo(W - PAD_R, yForMag(0));
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            // Horizontal grid (±20, ±40 dB)
-            for (const m of [-40, -20, 20, 40]) {
-                ctx.beginPath();
-                ctx.moveTo(PAD_L, yForMag(m));
-                ctx.lineTo(W - PAD_R, yForMag(m));
-                ctx.stroke();
-            }
-
-            // Vertical grid lines (log scale)
-            const freqGridLines = [1, 2, 5, 10, 20, 50, 100, 200, 500];
-            ctx.strokeStyle = "#2a2a2a";
-            for (const f of freqGridLines) {
-                const x = xForFreq(f);
-                ctx.beginPath();
-                ctx.moveTo(x, MAG_TOP);
-                ctx.lineTo(x, MAG_BOT);
-                ctx.stroke();
-            }
-
-            // Coherence shading
-            const { freqAxis, magDB, coherence, gcFreq } = axData;
-            const n = freqAxis.length;
-            const COH_THRESH = 0.6;
-            for (let i = 0; i < n; i++) {
-                const coh = coherence[i] ?? 0;
-                if (coh >= COH_THRESH) continue;
-                const x = xForFreq(freqAxis[i]);
-                const alpha = (1 - coh / COH_THRESH) * 0.35;
-                ctx.fillStyle = `rgba(80,80,80,${alpha.toFixed(2)})`;
-                ctx.fillRect(x, MAG_TOP, Math.max(1, xForFreq(freqAxis[i + 1] ?? freqAxis[i] * 1.01) - x), plotH);
-            }
-
-            // Magnitude curve
-            ctx.lineWidth = 1.5;
-            let drawing = false;
-            for (let i = 0; i < n; i++) {
-                const coh = coherence[i] ?? 0;
-                const alpha = coh < COH_THRESH ? 0.35 : 1.0;
-                const color = `rgba(255,187,0,${alpha})`;
-                const x = xForFreq(freqAxis[i]);
-                const y = yForMag(magDB[i]);
-                if (!drawing) {
-                    ctx.beginPath();
-                    ctx.moveTo(x, y);
-                    ctx.strokeStyle = color;
-                    drawing = true;
-                } else {
-                    const prevAlpha = (coherence[i - 1] ?? 0) < COH_THRESH ? 0.35 : 1.0;
-                    if (Math.abs(alpha - prevAlpha) > 0.01) {
-                        ctx.stroke();
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                        ctx.strokeStyle = color;
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                }
-            }
-            if (drawing) ctx.stroke();
-
-            // Gain-crossover frequency marker (dashed red)
-            if (gcFreq !== null && gcFreq >= FREQ_LO && gcFreq <= FREQ_HI) {
-                const xgc = xForFreq(gcFreq);
-                ctx.strokeStyle = "rgba(255,100,100,0.8)";
-                ctx.lineWidth = 1;
-                ctx.setLineDash([3, 3]);
-                ctx.beginPath();
-                ctx.moveTo(xgc, MAG_TOP);
-                ctx.lineTo(xgc, MAG_BOT);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-
-            // Y-axis labels (dB)
-            ctx.fillStyle = "#888888";
-            ctx.font = "10px monospace";
-            ctx.textAlign = "right";
-            for (const m of [-40, -20, 0, 20, 40]) {
-                const y = yForMag(m);
-                if (y < MAG_TOP || y > MAG_BOT + 2) continue;
-                ctx.fillText(`${m}`, PAD_L - 3, y + 3);
-            }
-            ctx.fillStyle = "#aaaaaa";
-            ctx.font = "9px monospace";
-            ctx.textAlign = "left";
-            ctx.fillText("dB", 2, MAG_TOP + 8);
-
-            // X-axis (frequency) labels
-            ctx.fillStyle = "#888888";
-            ctx.font = "10px monospace";
-            ctx.textAlign = "center";
-            for (const f of [1, 5, 10, 20, 50, 100, 200, 500]) {
-                const x = xForFreq(f);
-                ctx.fillText(f >= 1000 ? `${f / 1000}k` : `${f}`, x, H - 4);
-            }
-            ctx.fillStyle = "#aaaaaa";
-            ctx.font = "9px monospace";
-            ctx.textAlign = "right";
-            ctx.fillText("Hz", W - PAD_R, H - 4);
-
-            // Border
-            ctx.strokeStyle = "#444444";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(PAD_L, MAG_TOP, plotW, plotH);
         },
 
         async applySysIDToFC() {
@@ -3427,22 +3157,88 @@ export default {
 </script>
 
 <style scoped>
-.at-track-ratio-canvas {
+/* ── Chirp overlay chart ─────────────────────────────────────────── */
+.at-chirp-overlay-canvas {
     display: block;
     width: 100%;
     max-width: 580px;
     height: auto;
-    border: 1px solid #2a3a4a;
+    border: 1px solid #1e2a38;
     border-radius: 3px;
     margin-bottom: 4px;
 }
-.at-chirp-td-caption {
+.at-chirp-overlay-legend {
     font-size: 11px;
-    color: #777777;
-    font-style: italic;
-    margin-bottom: 10px;
+    color: #666666;
     font-family: monospace;
+    margin-bottom: 2px;
 }
+.at-chirp-overlay-hint {
+    font-size: 11px;
+    color: #555555;
+    font-style: italic;
+    font-family: monospace;
+    margin-bottom: 10px;
+}
+
+/* ── Axis selector tabs ──────────────────────────────────────────── */
+.at-sysid-axis-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.at-sysid-axis-tab {
+    padding: 4px 14px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: transparent;
+    color: #666;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: monospace;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.at-sysid-axis-tab:hover {
+    color: #aaa;
+    border-color: #555;
+}
+.at-sysid-axis-tab.active {
+    color: var(--ax-color, #ffbb00);
+    border-color: var(--ax-color, #ffbb00);
+    background: color-mix(in srgb, var(--ax-color, #ffbb00) 15%, transparent);
+}
+
+/* ── Zoom preset buttons ─────────────────────────────────────────── */
+.at-sysid-zoom-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+.at-sysid-zoom-btn {
+    padding: 3px 12px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: transparent;
+    color: #666;
+    font-size: 11px;
+    font-family: monospace;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.at-sysid-zoom-btn:hover {
+    color: #aaa;
+    border-color: #555;
+}
+.at-sysid-zoom-btn.active {
+    color: #ffbb00;
+    border-color: #ffbb00;
+    background: rgba(255, 187, 0, 0.1);
+}
+
+/* ── PID output section ──────────────────────────────────────────── */
 .at-sysid-pid-output {
     margin-top: 14px;
 }

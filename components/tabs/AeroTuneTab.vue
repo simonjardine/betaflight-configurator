@@ -289,7 +289,7 @@
                             </div>
 
                             <!-- ═══ FLIGHT DATA GRAPHS ═══ -->
-                            <div v-if="graphsVisible" class="at-graphs-section">
+                            <div v-if="graphsVisible" class="at-graphs-section" id="at-graphs">
                                 <!-- Graph 1: Unfiltered Gyros -->
                                 <div class="at-graph-panel">
                                     <div class="at-graph-header">
@@ -317,10 +317,10 @@
                                     <canvas ref="graphGyro" class="at-graph-canvas" width="900" height="180"></canvas>
                                 </div>
 
-                                <!-- Graph 2: Setpoint -->
+                                <!-- Graph 2: Setpoint + Gyro Tracking -->
                                 <div class="at-graph-panel">
                                     <div class="at-graph-header">
-                                        <span class="at-graph-title">SETPOINT (STICK INPUT)</span>
+                                        <span class="at-graph-title">Setpoint vs Gyro</span>
                                         <div class="at-graph-toggles">
                                             <button
                                                 v-for="ax in graphAxes"
@@ -336,8 +336,8 @@
                                             </button>
                                         </div>
                                         <div class="at-graph-zoom">
-                                            <button @click="graphZoom('setpoint', -1)">−</button>
-                                            <button @click="graphZoom('setpoint', 0)">Reset</button>
+                                            <button @click="graphZoom('setpoint', -1)">-</button>
+                                            <button @click="graphZoom('setpoint', 0)">Fit</button>
                                             <button @click="graphZoom('setpoint', 1)">+</button>
                                         </div>
                                     </div>
@@ -384,65 +384,61 @@
                                 <!-- Graph 4: Freq vs Throttle Spectrogram -->
                                 <div class="at-graph-panel">
                                     <div class="at-graph-header">
-                                        <span class="at-graph-title">FREQUENCY vs THROTTLE</span>
-                                        <div class="at-graph-zoom">
-                                            <button @click="graphZoom('spectrogram', -1)">−</button>
-                                            <button @click="graphZoom('spectrogram', 0)">Reset</button>
-                                            <button @click="graphZoom('spectrogram', 1)">+</button>
+                                        <span class="at-graph-title">Frequency vs Throttle</span>
+                                        <div class="at-spectrogram-legend">
+                                            <span class="at-sg-quiet">quiet</span>
+                                            <canvas ref="spectrogramLegend" width="100" height="10"></canvas>
+                                            <span class="at-sg-loud">loud</span>
                                         </div>
                                     </div>
-                                    <canvas
-                                        ref="graphSpectrogram"
-                                        class="at-graph-canvas at-graph-canvas--tall"
-                                        width="900"
-                                        height="260"
-                                    ></canvas>
-                                    <div class="at-spectrogram-legend">
-                                        <span class="at-sg-quiet">quiet</span>
-                                        <canvas ref="spectrogramLegend" width="100" height="12"></canvas>
-                                        <span class="at-sg-loud">loud</span>
+                                    <div class="at-spectrogram-row">
+                                        <canvas
+                                            ref="graphSpectrogram"
+                                            class="at-graph-canvas at-graph-canvas--tall"
+                                            width="900"
+                                            height="280"
+                                        ></canvas>
+                                        <input
+                                            type="range"
+                                            class="at-gain-slider"
+                                            min="10"
+                                            max="400"
+                                            :value="spectrogramGain"
+                                            orient="vertical"
+                                            title="Intensity gain"
+                                            @input="
+                                                spectrogramGain = Number($event.target.value);
+                                                renderGraphs();
+                                            "
+                                        />
                                     </div>
+                                </div>
+
+                                <!-- Motor RPM Heatmap -->
+                                <div class="at-graph-panel" v-if="extendedAnalysis && extendedAnalysis.motorHeatmap">
+                                    <div class="at-graph-header">
+                                        <span class="at-graph-title">Motor RPM Heatmap</span>
+                                        <span class="at-graph-subtitle" v-if="extendedAnalysis.itermBiasShort">{{
+                                            extendedAnalysis.itermBiasShort
+                                        }}</span>
+                                    </div>
+                                    <canvas
+                                        ref="graphMotorHeat"
+                                        class="at-graph-canvas"
+                                        width="900"
+                                        height="140"
+                                    ></canvas>
                                 </div>
                             </div>
 
                             <!-- ═══ ANALYSIS RESULTS ═══ -->
                             <div class="at-results-box">{{ analysisResult }}</div>
 
-                            <!-- ═══ Extended Analysis ═══ -->
+                            <!-- ═══ Extended Analysis (text) ═══ -->
                             <div v-if="extendedAnalysis" class="at-extended-analysis">
                                 <div class="at-ext-section">
-                                    <div class="at-ext-header">THROTTLE BAND BREAKDOWN</div>
-                                    <div class="at-ext-body">
-                                        <div class="at-throttle-bands">
-                                            <div
-                                                v-for="(band, idx) in extendedAnalysis.throttleBands"
-                                                :key="'tb-' + idx"
-                                                class="at-band-bar"
-                                                :style="{ '--band-pct': band.pct + '%' }"
-                                            >
-                                                <span class="at-band-label">{{ band.label }}</span>
-                                                <div class="at-band-fill"></div>
-                                                <span class="at-band-val">{{
-                                                    band.rms !== null ? band.rms.toFixed(1) : "—"
-                                                }}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="at-ext-section">
-                                    <div class="at-ext-header">MOTOR SPREAD PER THROTTLE BAND</div>
-                                    <div class="at-ext-body at-mono">{{ extendedAnalysis.motorSpreadText }}</div>
-                                </div>
-
-                                <div class="at-ext-section">
-                                    <div class="at-ext-header">PITCH TRACKING — STEP RESPONSE</div>
+                                    <div class="at-ext-header">Step Response</div>
                                     <div class="at-ext-body at-mono">{{ extendedAnalysis.stepResponseText }}</div>
-                                </div>
-
-                                <div v-if="extendedAnalysis.itermBiasText" class="at-ext-section">
-                                    <div class="at-ext-header">I-TERM BIAS DETECTION</div>
-                                    <div class="at-ext-body at-mono">{{ extendedAnalysis.itermBiasText }}</div>
                                 </div>
                             </div>
 
@@ -488,12 +484,6 @@
                                     </button>
                                     <button class="at-copy-btn" @click="copyLogPids">{{ logPidCopyBtnText }}</button>
                                 </div>
-                            </div>
-
-                            <!-- ═══ Credit ═══ -->
-                            <div class="at-credit-line">
-                                By Simon Jardine –
-                                <a href="https://aerobot2.com" target="_blank" rel="noopener">aerobot2.com</a>
                             </div>
 
                             <!-- ═══ SysID / Chirp frequency-response results ═══ -->
@@ -1425,12 +1415,18 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
     const totalFrames = rows.length;
 
     // ── RPM FILTER DETECTION ──────────────────────────────────────────────────
-    // Prefer config header; fall back to eRPM field presence in frame data.
-    const rpmHarmonics = config?.rpmFilter?.harmonics ?? 0;
-    const motorPoles = config?.motor?.poles ?? 14;
-    const dshotBidir = config?.motor?.dshotBidir ?? 0;
+    // RPM filter is ACTIVE when dshot_bidir == 1 AND gyro_rpm_notch_harmonics > 0.
+    // Config header fields: rpmFilter.harmonics (from gyro_rpm_notch_harmonics),
+    // motor.dshotBidir (from dshot_bidir), motor.poles (from motor_poles).
+    // Also check raw header as fallback for field name variations.
+    const rawHeader = config?._raw ?? {};
+    const rpmHarmonics =
+        config?.rpmFilter?.harmonics ??
+        parseInt(rawHeader["gyro_rpm_notch_harmonics"] ?? rawHeader["rpm_filter_harmonics"] ?? "0", 10);
+    const motorPoles = config?.motor?.poles ?? parseInt(rawHeader["motor_poles"] ?? "14", 10);
+    const dshotBidir = config?.motor?.dshotBidir ?? parseInt(rawHeader["dshot_bidir"] ?? "0", 10);
     const hasEpmFields = Object.keys(rows[0]).some((k) => /erpm/i.test(k) || /rpm\[/i.test(k));
-    const rpmFilterActive = rpmHarmonics > 0 || (hasEpmFields && dshotBidir === 1);
+    const rpmFilterActive = (dshotBidir === 1 && rpmHarmonics > 0) || (hasEpmFields && rpmHarmonics > 0);
 
     // ── THROTTLE ZONE SPLIT ───────────────────────────────────────────────────
     // Low 1000-1570: P/D tracking analysis.  High 1570-2000: filter/noise analysis.
@@ -2204,6 +2200,42 @@ function _computeLogPidRecommendations(config, stepText, dTermNoise, motorTemp) 
         };
     }
     return { old: oldPids, new: newPids };
+}
+
+// Build motor RPM heatmap data: motors x throttle bands
+function _buildMotorHeatmap(rows, motorPoles) {
+    const erpmKeys = Object.keys(rows[0] || {}).filter((k) => /erpm/i.test(k) || /motor\[/i.test(k));
+    if (erpmKeys.length === 0) return null;
+
+    const BANDS = 10;
+    const data = {}; // key -> [band0avg, band1avg, ...]
+    const sums = {};
+    const counts = {};
+    for (const key of erpmKeys) {
+        sums[key] = new Float64Array(BANDS);
+        counts[key] = new Int32Array(BANDS);
+    }
+
+    for (const row of rows) {
+        const thr = Number(row["rcCommand[3]"] ?? 1000);
+        const band = Math.min(9, Math.floor(Math.max(0, (thr - 1000) / 10) / 10));
+        for (const key of erpmKeys) {
+            const v = Math.abs(Number(row[key] ?? 0));
+            if (v > 0) {
+                sums[key][band] += (v * 100) / 60; // eRPM/100 → Hz
+                counts[key][band]++;
+            }
+        }
+    }
+
+    for (const key of erpmKeys) {
+        data[key] = [];
+        for (let b = 0; b < BANDS; b++) {
+            data[key].push(counts[key][b] >= 5 ? sums[key][b] / counts[key][b] : null);
+        }
+    }
+
+    return { motors: erpmKeys, bands: BANDS, data };
 }
 
 function formatAnalysisResult(r) {
@@ -2994,6 +3026,7 @@ export default {
             },
             graphZoomLevels: { gyro: 1, setpoint: 1, pidError: 1, spectrogram: 1 },
             graphPanOffsets: { gyro: 0, setpoint: 0, pidError: 0, spectrogram: 0 },
+            spectrogramGain: 100,
             _graphFrames: null,
             _graphConfig: null,
             extendedAnalysis: null,
@@ -3487,11 +3520,20 @@ export default {
             // Extended analysis
             const sampleRate = 1e6 / (config?.misc?.looptime ?? 312);
             const motorPoles = config?.motor?.poles ?? 14;
-            const throttleBands = _analyzeThrottleBands(frames);
-            const motorSpreadText = _analyzeMotorSpread(frames, motorPoles);
             const stepResponseText = _analyzeStepResponse(frames, sampleRate);
+
+            // Motor heatmap data (merged motor spread + throttle bands)
+            const motorHeatmap = _buildMotorHeatmap(frames, motorPoles);
+
+            // I-term bias — compact summary
             const itermBiasText = _analyzeItermBias(frames);
-            this.extendedAnalysis = { throttleBands, motorSpreadText, stepResponseText, itermBiasText };
+            let itermBiasShort = null;
+            if (itermBiasText) {
+                const lines = itermBiasText.split("\n").filter((l) => !l.startsWith("  "));
+                itermBiasShort = lines.join(" | ");
+            }
+
+            this.extendedAnalysis = { stepResponseText, motorHeatmap, itermBiasShort };
 
             // PID recommendations
             this.logPidOutput = _computeLogPidRecommendations(
@@ -3544,12 +3586,38 @@ export default {
                 label: "deg/s",
             });
 
-            // Graph 2: Setpoint
+            // Graph 2: Setpoint (solid) + Gyro (semi-transparent overlay)
             this._renderTimeSeries(this.$refs.graphSetpoint, frames, {
                 fields: [
-                    { key: "setpoint[0]", color: "#e74c3c", name: "roll", visible: this.graphToggles.setpoint.roll },
-                    { key: "setpoint[1]", color: "#3498db", name: "pitch", visible: this.graphToggles.setpoint.pitch },
-                    { key: "setpoint[2]", color: "#2ecc71", name: "yaw", visible: this.graphToggles.setpoint.yaw },
+                    { key: "setpoint[0]", color: "#e74c3c", name: "roll-sp", visible: this.graphToggles.setpoint.roll },
+                    {
+                        key: "gyroADC[0]",
+                        color: "#e74c3c",
+                        name: "roll-gyro",
+                        visible: this.graphToggles.setpoint.roll,
+                        alpha: 0.4,
+                    },
+                    {
+                        key: "setpoint[1]",
+                        color: "#3498db",
+                        name: "pitch-sp",
+                        visible: this.graphToggles.setpoint.pitch,
+                    },
+                    {
+                        key: "gyroADC[1]",
+                        color: "#3498db",
+                        name: "pitch-gyro",
+                        visible: this.graphToggles.setpoint.pitch,
+                        alpha: 0.4,
+                    },
+                    { key: "setpoint[2]", color: "#2ecc71", name: "yaw-sp", visible: this.graphToggles.setpoint.yaw },
+                    {
+                        key: "gyroADC[2]",
+                        color: "#2ecc71",
+                        name: "yaw-gyro",
+                        visible: this.graphToggles.setpoint.yaw,
+                        alpha: 0.4,
+                    },
                 ],
                 zoom: this.graphZoomLevels.setpoint,
                 pan: this.graphPanOffsets.setpoint,
@@ -3589,8 +3657,9 @@ export default {
             // Graph 4: Freq vs Throttle Spectrogram
             this._renderFreqVsThrottle(this.$refs.graphSpectrogram, config);
 
-            // Legend
+            // Legend + Motor heatmap
             this._renderSpectrogramLegend();
+            this._renderMotorHeatmap();
         },
 
         _renderTimeSeries(canvas, frames, opts) {
@@ -3605,8 +3674,8 @@ export default {
             const plotW = W - PAD_L - PAD_R;
             const plotH = H - PAD_T - PAD_B;
 
-            // Clear
-            ctx.fillStyle = "#0a0e14";
+            // Clear — BF configurator dark surface
+            ctx.fillStyle = "hsl(0,0%,8%)";
             ctx.fillRect(0, 0, W, H);
 
             const zoom = opts.zoom || 1;
@@ -3630,7 +3699,7 @@ export default {
                     if (v < yMin) yMin = v;
                     if (v > yMax) yMax = v;
                 }
-                traces.push({ vals, color: f.color, name: f.name });
+                traces.push({ vals, color: f.color, name: f.name, alpha: f.alpha });
             }
 
             if (traces.length === 0 || yMin === Infinity) return;
@@ -3675,8 +3744,8 @@ export default {
             const xStep = plotW / (endFrame - startFrame - 1 || 1);
             for (const trace of traces) {
                 ctx.strokeStyle = trace.color;
-                ctx.lineWidth = 1.2;
-                ctx.globalAlpha = 0.85;
+                ctx.lineWidth = trace.alpha ? 1.0 : 1.2;
+                ctx.globalAlpha = trace.alpha ?? 0.85;
                 ctx.beginPath();
                 for (let i = 0; i < trace.vals.length; i++) {
                     const x = PAD_L + i * xStep;
@@ -3708,11 +3777,12 @@ export default {
 
             const { matrix, maxBin, maxFreqHz } = this._freqVsThrottleData;
 
-            // Clear
-            ctx.fillStyle = "#0a0e14";
+            // Clear — dark background
+            ctx.fillStyle = "hsl(0,0%,4%)";
             ctx.fillRect(0, 0, W, H);
 
             // Find global max for normalisation
+            const gainFactor = (this.spectrogramGain || 100) / 100;
             let globalMax = 0;
             for (let t = 0; t < 100; t++) {
                 for (let k = 0; k < maxBin; k++) {
@@ -3728,23 +3798,24 @@ export default {
                 for (let py = 0; py < plotH; py++) {
                     // py=0 is top=100% throttle, py=plotH-1 is bottom=0% throttle
                     const thrBin = Math.min(99, Math.floor((1 - py / plotH) * 100));
-                    const val = Math.min(1, matrix[thrBin][freqBin] / globalMax);
+                    const val = Math.min(1, (matrix[thrBin][freqBin] / globalMax) * gainFactor);
                     const idx = (py * plotW + px) * 4;
-                    // Hot colormap: dark → blue → red → yellow → white
+                    // Hot colormap: black → dark red → red → orange → yellow → white
                     const v4 = val * 4;
+                    // Black → dark red → red → orange → yellow → white
                     let r, g, b;
                     if (v4 < 1) {
-                        r = 0;
+                        r = Math.floor(v4 * 128);
                         g = 0;
-                        b = Math.floor(v4 * 180);
+                        b = 0;
                     } else if (v4 < 2) {
-                        r = Math.floor((v4 - 1) * 200);
+                        r = 128 + Math.floor((v4 - 1) * 127);
                         g = 0;
-                        b = 180 - Math.floor((v4 - 1) * 80);
+                        b = 0;
                     } else if (v4 < 3) {
-                        r = 200 + Math.floor((v4 - 2) * 55);
+                        r = 255;
                         g = Math.floor((v4 - 2) * 200);
-                        b = 100 - Math.floor((v4 - 2) * 100);
+                        b = 0;
                     } else {
                         r = 255;
                         g = 200 + Math.floor((v4 - 3) * 55);
@@ -3885,17 +3956,17 @@ export default {
                 const v4 = (x / lw) * 4;
                 let r, g, b;
                 if (v4 < 1) {
-                    r = 0;
+                    r = Math.floor(v4 * 128);
                     g = 0;
-                    b = Math.floor(v4 * 180);
+                    b = 0;
                 } else if (v4 < 2) {
-                    r = Math.floor((v4 - 1) * 200);
+                    r = 128 + Math.floor((v4 - 1) * 127);
                     g = 0;
-                    b = 180 - Math.floor((v4 - 1) * 80);
+                    b = 0;
                 } else if (v4 < 3) {
-                    r = 200 + Math.floor((v4 - 2) * 55);
+                    r = 255;
                     g = Math.floor((v4 - 2) * 200);
-                    b = 100 - Math.floor((v4 - 2) * 100);
+                    b = 0;
                 } else {
                     r = 255;
                     g = 200 + Math.floor((v4 - 3) * 55);
@@ -3903,6 +3974,81 @@ export default {
                 }
                 lctx.fillStyle = `rgb(${r},${g},${b})`;
                 lctx.fillRect(x, 0, 1, lh);
+            }
+        },
+
+        _renderMotorHeatmap() {
+            const canvas = this.$refs.graphMotorHeat;
+            if (!canvas || !this.extendedAnalysis?.motorHeatmap) return;
+            const ctx = canvas.getContext("2d");
+            const W = canvas.width;
+            const H = canvas.height;
+            const hm = this.extendedAnalysis.motorHeatmap;
+            const PAD_L = 64,
+                PAD_R = 8,
+                PAD_T = 4,
+                PAD_B = 22;
+            const plotW = W - PAD_L - PAD_R;
+            const plotH = H - PAD_T - PAD_B;
+            const numMotors = hm.motors.length;
+            const numBands = hm.bands;
+
+            ctx.fillStyle = "hsl(0,0%,8%)";
+            ctx.fillRect(0, 0, W, H);
+
+            let gMin = Infinity,
+                gMax = 0;
+            for (const key of hm.motors) {
+                for (const v of hm.data[key]) {
+                    if (v !== null) {
+                        if (v < gMin) gMin = v;
+                        if (v > gMax) gMax = v;
+                    }
+                }
+            }
+            if (gMax === 0) gMax = 1;
+            const range = gMax - gMin || 1;
+            const cellW = plotW / numBands;
+            const cellH = plotH / numMotors;
+
+            for (let m = 0; m < numMotors; m++) {
+                const motorKey = hm.motors[m];
+                for (let b = 0; b < numBands; b++) {
+                    const v = hm.data[motorKey][b];
+                    const cx = PAD_L + b * cellW;
+                    const cy = PAD_T + m * cellH;
+                    if (v === null) {
+                        ctx.fillStyle = "hsl(0,0%,12%)";
+                    } else {
+                        const norm = (v - gMin) / range;
+                        const hue = (1 - norm) * 240;
+                        ctx.fillStyle = `hsl(${hue},80%,45%)`;
+                    }
+                    ctx.fillRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
+                    if (v !== null) {
+                        ctx.font = "9px monospace";
+                        ctx.fillStyle = "#fff";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(`${Math.round(v)}`, cx + cellW / 2, cy + cellH / 2);
+                    }
+                }
+                ctx.font = "10px monospace";
+                ctx.fillStyle = "#aaa";
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                ctx.fillText(
+                    motorKey.replace(/[[\]]/g, "").replace("eRPM", "M"),
+                    PAD_L - 4,
+                    PAD_T + m * cellH + cellH / 2,
+                );
+            }
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#888";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+            for (let b = 0; b < numBands; b++) {
+                ctx.fillText(`${b * 10}%`, PAD_L + b * cellW + cellW / 2, PAD_T + plotH + 4);
             }
         },
 

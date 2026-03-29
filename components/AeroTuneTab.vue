@@ -413,22 +413,6 @@
                                         />
                                     </div>
                                 </div>
-
-                                <!-- Motor RPM Heatmap -->
-                                <div class="at-graph-panel" v-if="extendedAnalysis && extendedAnalysis.motorHeatmap">
-                                    <div class="at-graph-header">
-                                        <span class="at-graph-title">Motor RPM Heatmap</span>
-                                        <span class="at-graph-subtitle" v-if="extendedAnalysis.itermBiasShort">{{
-                                            extendedAnalysis.itermBiasShort
-                                        }}</span>
-                                    </div>
-                                    <canvas
-                                        ref="graphMotorHeat"
-                                        class="at-graph-canvas"
-                                        width="900"
-                                        height="140"
-                                    ></canvas>
-                                </div>
                             </div>
 
                             <!-- ═══ ANALYSIS RESULTS ═══ -->
@@ -1958,7 +1942,31 @@ function _buildFreqVsThrottleData(rows, sampleRate) {
         }
     }
 
-    return { matrix, counts, maxBin, freqBinHz, maxFreqHz, sampleRate };
+    // Pre-compute average motor frequency (Hz) per throttle bin for the cyan RPM line
+    const erpmKeys = Object.keys(rows[0] || {}).filter((k) => /erpm/i.test(k));
+    const rpmPerBin = new Float64Array(NUM_THROTTLE_BINS); // avg motor Hz per throttle bin
+    if (erpmKeys.length > 0) {
+        const rpmSums = new Float64Array(NUM_THROTTLE_BINS);
+        const rpmCounts = new Int32Array(NUM_THROTTLE_BINS);
+        for (const row of rows) {
+            const thr = Number(row["rcCommand[3]"] ?? 1000);
+            const thrPct = Math.max(0, Math.min(99.9, (thr - 1000) / 10));
+            const tb = Math.floor(thrPct);
+            for (const ek of erpmKeys) {
+                const v = Math.abs(Number(row[ek] ?? 0));
+                if (v > 0) {
+                    rpmSums[tb] += v;
+                    rpmCounts[tb]++;
+                }
+            }
+        }
+        for (let t = 0; t < NUM_THROTTLE_BINS; t++) {
+            // eRPM stored as eRPM/100 in BBL → actual_eRPM = value*100 → Hz = eRPM/60
+            rpmPerBin[t] = rpmCounts[t] >= 5 ? ((rpmSums[t] / rpmCounts[t]) * 100) / 60 : 0;
+        }
+    }
+
+    return { matrix, counts, maxBin, freqBinHz, maxFreqHz, sampleRate, rpmPerBin };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2200,42 +2208,6 @@ function _computeLogPidRecommendations(config, stepText, dTermNoise, motorTemp) 
         };
     }
     return { old: oldPids, new: newPids };
-}
-
-// Build motor RPM heatmap data: motors x throttle bands
-function _buildMotorHeatmap(rows, motorPoles) {
-    const erpmKeys = Object.keys(rows[0] || {}).filter((k) => /erpm/i.test(k) || /motor\[/i.test(k));
-    if (erpmKeys.length === 0) return null;
-
-    const BANDS = 10;
-    const data = {}; // key -> [band0avg, band1avg, ...]
-    const sums = {};
-    const counts = {};
-    for (const key of erpmKeys) {
-        sums[key] = new Float64Array(BANDS);
-        counts[key] = new Int32Array(BANDS);
-    }
-
-    for (const row of rows) {
-        const thr = Number(row["rcCommand[3]"] ?? 1000);
-        const band = Math.min(9, Math.floor(Math.max(0, (thr - 1000) / 10) / 10));
-        for (const key of erpmKeys) {
-            const v = Math.abs(Number(row[key] ?? 0));
-            if (v > 0) {
-                sums[key][band] += (v * 100) / 60; // eRPM/100 → Hz
-                counts[key][band]++;
-            }
-        }
-    }
-
-    for (const key of erpmKeys) {
-        data[key] = [];
-        for (let b = 0; b < BANDS; b++) {
-            data[key].push(counts[key][b] >= 5 ? sums[key][b] / counts[key][b] : null);
-        }
-    }
-
-    return { motors: erpmKeys, bands: BANDS, data };
 }
 
 function formatAnalysisResult(r) {
@@ -3519,21 +3491,9 @@ export default {
 
             // Extended analysis
             const sampleRate = 1e6 / (config?.misc?.looptime ?? 312);
-            const motorPoles = config?.motor?.poles ?? 14;
             const stepResponseText = _analyzeStepResponse(frames, sampleRate);
 
-            // Motor heatmap data (merged motor spread + throttle bands)
-            const motorHeatmap = _buildMotorHeatmap(frames, motorPoles);
-
-            // I-term bias — compact summary
-            const itermBiasText = _analyzeItermBias(frames);
-            let itermBiasShort = null;
-            if (itermBiasText) {
-                const lines = itermBiasText.split("\n").filter((l) => !l.startsWith("  "));
-                itermBiasShort = lines.join(" | ");
-            }
-
-            this.extendedAnalysis = { stepResponseText, motorHeatmap, itermBiasShort };
+            this.extendedAnalysis = { stepResponseText };
 
             // PID recommendations
             this.logPidOutput = _computeLogPidRecommendations(
@@ -3657,9 +3617,8 @@ export default {
             // Graph 4: Freq vs Throttle Spectrogram
             this._renderFreqVsThrottle(this.$refs.graphSpectrogram, config);
 
-            // Legend + Motor heatmap
+            // Legend
             this._renderSpectrogramLegend();
-            this._renderMotorHeatmap();
         },
 
         _renderTimeSeries(canvas, frames, opts) {
@@ -3775,34 +3734,55 @@ export default {
             const plotW = W - PAD_L - PAD_R;
             const plotH = H - PAD_T - PAD_B;
 
-            const { matrix, maxBin, maxFreqHz } = this._freqVsThrottleData;
+            const { matrix, maxBin, maxFreqHz, rpmPerBin } = this._freqVsThrottleData;
 
             // Clear — dark background
             ctx.fillStyle = "hsl(0,0%,4%)";
             ctx.fillRect(0, 0, W, H);
 
-            // Find global max for normalisation
+            // Find global max for normalisation (use 95th percentile to avoid outlier washout)
             const gainFactor = (this.spectrogramGain || 100) / 100;
-            let globalMax = 0;
+            const allVals = [];
             for (let t = 0; t < 100; t++) {
                 for (let k = 0; k < maxBin; k++) {
-                    if (matrix[t][k] > globalMax) globalMax = matrix[t][k];
+                    if (matrix[t][k] > 0) allVals.push(matrix[t][k]);
                 }
             }
+            allVals.sort((a, b) => a - b);
+            const p95idx = Math.floor(allVals.length * 0.95);
+            let globalMax = allVals.length > 0 ? (allVals[p95idx] ?? allVals[allVals.length - 1]) : 1;
             if (globalMax === 0) globalMax = 1;
 
-            // Draw heatmap: X=frequency, Y=throttle%
-            const img = ctx.createImageData(plotW, plotH);
-            for (let px = 0; px < plotW; px++) {
-                const freqBin = Math.min(Math.floor((px / plotW) * maxBin), maxBin - 1);
-                for (let py = 0; py < plotH; py++) {
-                    // py=0 is top=100% throttle, py=plotH-1 is bottom=0% throttle
-                    const thrBin = Math.min(99, Math.floor((1 - py / plotH) * 100));
-                    const val = Math.min(1, (matrix[thrBin][freqBin] / globalMax) * gainFactor);
-                    const idx = (py * plotW + px) * 4;
+            // Draw heatmap into an offscreen canvas for blur pass
+            const offscreen = document.createElement("canvas");
+            offscreen.width = plotW;
+            offscreen.height = plotH;
+            const octx = offscreen.getContext("2d");
+            const img = octx.createImageData(plotW, plotH);
+            const data = img.data;
+
+            for (let py = 0; py < plotH; py++) {
+                // Bilinear interpolation between throttle bins: py=0 → 100% throttle
+                const thrFrac = (1 - py / plotH) * 99.0;
+                const t0 = Math.floor(thrFrac);
+                const t1 = Math.min(99, t0 + 1);
+                const tf = thrFrac - t0;
+                const row0 = matrix[t0];
+                const row1 = matrix[t1];
+
+                for (let px = 0; px < plotW; px++) {
+                    // Bilinear interpolation between frequency bins
+                    const freqFrac = (px / plotW) * (maxBin - 1);
+                    const f0 = Math.floor(freqFrac);
+                    const f1 = Math.min(maxBin - 1, f0 + 1);
+                    const ff = freqFrac - f0;
+
+                    const mag =
+                        (row0[f0] * (1 - ff) + row0[f1] * ff) * (1 - tf) + (row1[f0] * (1 - ff) + row1[f1] * ff) * tf;
+
+                    const val = Math.min(1, (mag / globalMax) * gainFactor);
                     // Hot colormap: black → dark red → red → orange → yellow → white
                     const v4 = val * 4;
-                    // Black → dark red → red → orange → yellow → white
                     let r, g, b;
                     if (v4 < 1) {
                         r = Math.floor(v4 * 128);
@@ -3821,13 +3801,21 @@ export default {
                         g = 200 + Math.floor((v4 - 3) * 55);
                         b = Math.floor((v4 - 3) * 255);
                     }
-                    img.data[idx] = r;
-                    img.data[idx + 1] = g;
-                    img.data[idx + 2] = b;
-                    img.data[idx + 3] = 255;
+                    const idx = (py * plotW + px) * 4;
+                    data[idx] = r;
+                    data[idx + 1] = g;
+                    data[idx + 2] = b;
+                    data[idx + 3] = 255;
                 }
             }
-            ctx.putImageData(img, PAD_L, PAD_T);
+            octx.putImageData(img, 0, 0);
+
+            // Blur pass (like Blackbox Explorer) for smooth appearance
+            octx.filter = "blur(1px)";
+            octx.drawImage(offscreen, 0, 0);
+            octx.filter = "none";
+
+            ctx.drawImage(offscreen, PAD_L, PAD_T);
 
             // Filter overlay lines
             const drawFilterLine = (freqHz, label, color) => {
@@ -3877,33 +3865,15 @@ export default {
                 }
             }
 
-            // Motor RPM tracking line (cyan) from eRPM data
-            const erpmKeys = Object.keys(this._graphFrames[0] || {}).filter((k) => /erpm/i.test(k));
-            if (erpmKeys.length > 0 && config) {
-                // For each throttle bin, compute average motor frequency
-                ctx.strokeStyle = "rgba(0,255,255,0.7)";
+            // Cyan diagonal RPM line — pre-computed in _buildFreqVsThrottleData
+            if (rpmPerBin) {
+                ctx.strokeStyle = "rgba(0,255,255,0.85)";
                 ctx.lineWidth = 2;
+                ctx.setLineDash([]);
                 ctx.beginPath();
                 let started = false;
                 for (let thrBin = 0; thrBin < 100; thrBin++) {
-                    let erpmSum = 0,
-                        erpmCount = 0;
-                    for (const row of this._graphFrames) {
-                        const thr = Number(row["rcCommand[3]"] ?? 1000);
-                        const rowBin = Math.floor(Math.max(0, Math.min(99.9, (thr - 1000) / 10)));
-                        if (Math.abs(rowBin - thrBin) <= 2) {
-                            for (const ek of erpmKeys) {
-                                const v = Math.abs(Number(row[ek] ?? 0));
-                                if (v > 0) {
-                                    erpmSum += v;
-                                    erpmCount++;
-                                }
-                            }
-                        }
-                    }
-                    if (erpmCount < 5) continue;
-                    const avgErpm = erpmSum / erpmCount;
-                    const freqHz = (avgErpm * 100) / 60;
+                    const freqHz = rpmPerBin[thrBin];
                     if (freqHz < 5 || freqHz > maxFreqHz) continue;
                     const x = PAD_L + (freqHz / maxFreqHz) * plotW;
                     const y = PAD_T + plotH * (1 - thrBin / 100);
@@ -3913,11 +3883,12 @@ export default {
                     } else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
-                // Label
                 if (started) {
                     ctx.font = "9px monospace";
-                    ctx.fillStyle = "rgba(0,255,255,0.8)";
-                    ctx.fillText("Motor RPM", PAD_L + plotW - 60, PAD_T + plotH - 6);
+                    ctx.fillStyle = "rgba(0,255,255,0.9)";
+                    ctx.textAlign = "right";
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText("Motor RPM", PAD_L + plotW - 4, PAD_T + plotH - 4);
                 }
             }
 
@@ -3926,12 +3897,10 @@ export default {
             ctx.fillStyle = "#888";
             ctx.textBaseline = "top";
             ctx.textAlign = "center";
-            // X axis: frequency
             for (let f = 0; f <= maxFreqHz; f += 100) {
                 const x = PAD_L + (f / maxFreqHz) * plotW;
                 ctx.fillText(`${f}`, x, PAD_T + plotH + 4);
             }
-            // Y axis: throttle%
             ctx.textBaseline = "middle";
             ctx.textAlign = "right";
             for (let t = 0; t <= 100; t += 20) {
@@ -3974,81 +3943,6 @@ export default {
                 }
                 lctx.fillStyle = `rgb(${r},${g},${b})`;
                 lctx.fillRect(x, 0, 1, lh);
-            }
-        },
-
-        _renderMotorHeatmap() {
-            const canvas = this.$refs.graphMotorHeat;
-            if (!canvas || !this.extendedAnalysis?.motorHeatmap) return;
-            const ctx = canvas.getContext("2d");
-            const W = canvas.width;
-            const H = canvas.height;
-            const hm = this.extendedAnalysis.motorHeatmap;
-            const PAD_L = 64,
-                PAD_R = 8,
-                PAD_T = 4,
-                PAD_B = 22;
-            const plotW = W - PAD_L - PAD_R;
-            const plotH = H - PAD_T - PAD_B;
-            const numMotors = hm.motors.length;
-            const numBands = hm.bands;
-
-            ctx.fillStyle = "hsl(0,0%,8%)";
-            ctx.fillRect(0, 0, W, H);
-
-            let gMin = Infinity,
-                gMax = 0;
-            for (const key of hm.motors) {
-                for (const v of hm.data[key]) {
-                    if (v !== null) {
-                        if (v < gMin) gMin = v;
-                        if (v > gMax) gMax = v;
-                    }
-                }
-            }
-            if (gMax === 0) gMax = 1;
-            const range = gMax - gMin || 1;
-            const cellW = plotW / numBands;
-            const cellH = plotH / numMotors;
-
-            for (let m = 0; m < numMotors; m++) {
-                const motorKey = hm.motors[m];
-                for (let b = 0; b < numBands; b++) {
-                    const v = hm.data[motorKey][b];
-                    const cx = PAD_L + b * cellW;
-                    const cy = PAD_T + m * cellH;
-                    if (v === null) {
-                        ctx.fillStyle = "hsl(0,0%,12%)";
-                    } else {
-                        const norm = (v - gMin) / range;
-                        const hue = (1 - norm) * 240;
-                        ctx.fillStyle = `hsl(${hue},80%,45%)`;
-                    }
-                    ctx.fillRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
-                    if (v !== null) {
-                        ctx.font = "9px monospace";
-                        ctx.fillStyle = "#fff";
-                        ctx.textAlign = "center";
-                        ctx.textBaseline = "middle";
-                        ctx.fillText(`${Math.round(v)}`, cx + cellW / 2, cy + cellH / 2);
-                    }
-                }
-                ctx.font = "10px monospace";
-                ctx.fillStyle = "#aaa";
-                ctx.textAlign = "right";
-                ctx.textBaseline = "middle";
-                ctx.fillText(
-                    motorKey.replace(/[[\]]/g, "").replace("eRPM", "M"),
-                    PAD_L - 4,
-                    PAD_T + m * cellH + cellH / 2,
-                );
-            }
-            ctx.font = "9px monospace";
-            ctx.fillStyle = "#888";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
-            for (let b = 0; b < numBands; b++) {
-                ctx.fillText(`${b * 10}%`, PAD_L + b * cellW + cellW / 2, PAD_T + plotH + 4);
             }
         },
 

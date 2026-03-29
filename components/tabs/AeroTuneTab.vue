@@ -1898,31 +1898,19 @@ function _buildFreqVsThrottleData(rows, sampleRate, motorPoles = 14) {
     const maxFreqHz = 500;
     const maxBin = Math.min(halfN, Math.ceil(maxFreqHz / freqBinHz));
     const hann = _hannWindow(fftSize);
-    const hopLen = Math.max(1, Math.floor(chunkLen / 2));
+    // BBE uses chunkLength/6 hop (83% overlap) for dense throttle coverage
+    const hopLen = Math.max(1, Math.round(chunkLen / 6));
 
-    // Throttle values — rcCommand[3] is raw RC throttle (1000-2000 µs range)
+    // Throttle values — rcCommand[3] is raw RC throttle (1000-2000 µs), convert to 0-100%
     const signal = rows.map((r) => Number(r["gyroADC[0]"] ?? 0));
     const throttles = rows.map((r) => {
         const v = Number(r["rcCommand[3]"]);
-        return Number.isNaN(v) ? 1000 : v;
+        return Number.isNaN(v) ? 0 : Math.max(0, Math.min(100, (v - 1000) / 10));
     });
 
-    // First pass: find the actual throttle range across all chunks (like Blackbox Explorer)
-    // This ensures the Y axis always spans the full range of data, even if only partial throttle was used.
-    let thrMin = Infinity,
-        thrMax = -Infinity;
-    for (let start = 0; start + chunkLen <= signal.length; start += hopLen) {
-        let s = 0;
-        for (let i = start; i < start + chunkLen; i++) s += throttles[i];
-        const avg = s / chunkLen;
-        if (avg < thrMin) thrMin = avg;
-        if (avg > thrMax) thrMax = avg;
-    }
-    if (!isFinite(thrMin) || thrMax <= thrMin) {
-        thrMin = 1000;
-        thrMax = 2000;
-    }
-    const thrRange = thrMax - thrMin;
+    // Fixed throttle range 0-100% (BBE approach) — no adaptive ranging
+    const thrMin = 0;
+    const thrMax = 100;
 
     // Matrix: [throttleBin][freqBin] accumulator
     const matrix = [];
@@ -1931,13 +1919,13 @@ function _buildFreqVsThrottleData(rows, sampleRate, motorPoles = 14) {
         matrix.push(new Float64Array(maxBin));
     }
 
-    // Second pass: FFT chunks, bin by normalized throttle position
+    // FFT chunks, bin by throttle % position
     for (let start = 0; start + chunkLen <= signal.length; start += hopLen) {
         let thrSum = 0;
         for (let i = start; i < start + chunkLen; i++) thrSum += throttles[i];
         const avgThr = thrSum / chunkLen;
-        // Normalize throttle to 0-99 using actual observed range
-        const thrBin = Math.min(99, Math.max(0, Math.floor(((avgThr - thrMin) / thrRange) * 100)));
+        // throttles already 0-100%, map to bin 0-99
+        const thrBin = Math.min(99, Math.max(0, Math.floor(avgThr)));
 
         const re = new Float64Array(fftSize);
         const im = new Float64Array(fftSize);
@@ -1972,7 +1960,8 @@ function _buildFreqVsThrottleData(rows, sampleRate, motorPoles = 14) {
         for (const row of rows) {
             const thr = Number(row["rcCommand[3]"]);
             if (Number.isNaN(thr)) continue;
-            const tb = Math.min(99, Math.max(0, Math.floor(((thr - thrMin) / thrRange) * 100)));
+            const thrPct = Math.max(0, Math.min(100, (thr - 1000) / 10));
+            const tb = Math.min(99, Math.max(0, Math.floor(thrPct)));
             for (const ek of erpmKeys) {
                 const v = Math.abs(Number(row[ek] ?? 0));
                 if (v > 100) {
@@ -3609,20 +3598,19 @@ export default {
                 const col = gyroColors[i];
                 const ax = gyroAxes[i];
                 if (hasUnfilt) {
-                    // Unfiltered — solid, full brightness (what the FC sees before filters)
+                    // Unfiltered — axis colour, full opacity
                     gyroFields.push({
                         key: `gyroUnfilt[${i}]`,
                         color: col,
                         name: `${ax}-unfilt`,
                         visible: this.graphToggles.gyro[ax],
                     });
-                    // Filtered overlay — semi-transparent (what comes out after filters)
+                    // Filtered — white, full opacity
                     gyroFields.push({
                         key: `gyroADC[${i}]`,
-                        color: col,
+                        color: "#ffffff",
                         name: `${ax}-filt`,
                         visible: this.graphToggles.gyro[ax],
-                        alpha: 0.38,
                     });
                 } else {
                     // Only filtered data available
@@ -3641,20 +3629,19 @@ export default {
                 label: "deg/s",
             });
 
-            // Graph 2: Setpoint (solid) + Gyro (semi-transparent overlay)
+            // Graph 2: Setpoint (white) + Gyro response (axis colour), both full opacity
             this._renderTimeSeries(this.$refs.graphSetpoint, frames, {
                 fields: [
-                    { key: "setpoint[0]", color: "#e74c3c", name: "roll-sp", visible: this.graphToggles.setpoint.roll },
+                    { key: "setpoint[0]", color: "#ffffff", name: "roll-sp", visible: this.graphToggles.setpoint.roll },
                     {
                         key: "gyroADC[0]",
                         color: "#e74c3c",
                         name: "roll-gyro",
                         visible: this.graphToggles.setpoint.roll,
-                        alpha: 0.4,
                     },
                     {
                         key: "setpoint[1]",
-                        color: "#3498db",
+                        color: "#ffffff",
                         name: "pitch-sp",
                         visible: this.graphToggles.setpoint.pitch,
                     },
@@ -3663,16 +3650,9 @@ export default {
                         color: "#3498db",
                         name: "pitch-gyro",
                         visible: this.graphToggles.setpoint.pitch,
-                        alpha: 0.4,
                     },
-                    { key: "setpoint[2]", color: "#2ecc71", name: "yaw-sp", visible: this.graphToggles.setpoint.yaw },
-                    {
-                        key: "gyroADC[2]",
-                        color: "#2ecc71",
-                        name: "yaw-gyro",
-                        visible: this.graphToggles.setpoint.yaw,
-                        alpha: 0.4,
-                    },
+                    { key: "setpoint[2]", color: "#ffffff", name: "yaw-sp", visible: this.graphToggles.setpoint.yaw },
+                    { key: "gyroADC[2]", color: "#2ecc71", name: "yaw-gyro", visible: this.graphToggles.setpoint.yaw },
                 ],
                 zoom: this.graphZoomLevels.setpoint,
                 pan: this.graphPanOffsets.setpoint,
@@ -3962,14 +3942,12 @@ export default {
                 const x = PAD_L + (f / maxFreqHz) * plotW;
                 ctx.fillText(`${f}`, x, PAD_T + plotH + 4);
             }
-            // Y axis labels — show actual throttle % range from the log data
+            // Y axis labels — fixed 0-100% throttle range
             ctx.textBaseline = "middle";
             ctx.textAlign = "right";
-            const thrMinPct = Math.round(Math.max(0, (thrMin - 1000) / 10));
-            const thrMaxPct = Math.round(Math.min(100, (thrMax - 1000) / 10));
             for (let step = 0; step <= 4; step++) {
                 const frac = step / 4;
-                const pct = Math.round(thrMinPct + (thrMaxPct - thrMinPct) * frac);
+                const pct = Math.round(frac * 100);
                 const y = PAD_T + plotH * (1 - frac);
                 ctx.fillText(`${pct}%`, PAD_L - 4, y);
             }

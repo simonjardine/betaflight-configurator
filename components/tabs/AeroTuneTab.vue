@@ -288,19 +288,212 @@
                                 </select>
                             </div>
 
-                            <div class="at-results-box">{{ analysisResult }}</div>
+                            <!-- ═══ FLIGHT DATA GRAPHS ═══ -->
+                            <div v-if="graphsVisible" class="at-graphs-section">
+                                <!-- Graph 1: Unfiltered Gyros -->
+                                <div class="at-graph-panel">
+                                    <div class="at-graph-header">
+                                        <span class="at-graph-title">UNFILTERED GYRO</span>
+                                        <div class="at-graph-toggles">
+                                            <button
+                                                v-for="ax in graphAxes"
+                                                :key="'g1-' + ax.name"
+                                                :class="['at-axis-toggle', { active: graphToggles.gyro[ax.name] }]"
+                                                :style="{ '--ax-color': ax.color }"
+                                                @click="
+                                                    graphToggles.gyro[ax.name] = !graphToggles.gyro[ax.name];
+                                                    renderGraphs();
+                                                "
+                                            >
+                                                {{ ax.label }}
+                                            </button>
+                                        </div>
+                                        <div class="at-graph-zoom">
+                                            <button @click="graphZoom('gyro', -1)">−</button>
+                                            <button @click="graphZoom('gyro', 0)">Reset</button>
+                                            <button @click="graphZoom('gyro', 1)">+</button>
+                                        </div>
+                                    </div>
+                                    <canvas ref="graphGyro" class="at-graph-canvas" width="900" height="180"></canvas>
+                                </div>
 
-                            <!-- ═══ Mini Spectrogram ═══ -->
-                            <div v-if="spectrogramVisible" class="at-spectrogram-section">
-                                <div class="at-spectrogram-label">GYRO SPECTROGRAM (0–500 Hz)</div>
-                                <div class="at-spectrogram-wrap">
-                                    <canvas ref="spectrogramCanvas" width="600" height="200"></canvas>
+                                <!-- Graph 2: Setpoint -->
+                                <div class="at-graph-panel">
+                                    <div class="at-graph-header">
+                                        <span class="at-graph-title">SETPOINT (STICK INPUT)</span>
+                                        <div class="at-graph-toggles">
+                                            <button
+                                                v-for="ax in graphAxes"
+                                                :key="'g2-' + ax.name"
+                                                :class="['at-axis-toggle', { active: graphToggles.setpoint[ax.name] }]"
+                                                :style="{ '--ax-color': ax.color }"
+                                                @click="
+                                                    graphToggles.setpoint[ax.name] = !graphToggles.setpoint[ax.name];
+                                                    renderGraphs();
+                                                "
+                                            >
+                                                {{ ax.label }}
+                                            </button>
+                                        </div>
+                                        <div class="at-graph-zoom">
+                                            <button @click="graphZoom('setpoint', -1)">−</button>
+                                            <button @click="graphZoom('setpoint', 0)">Reset</button>
+                                            <button @click="graphZoom('setpoint', 1)">+</button>
+                                        </div>
+                                    </div>
+                                    <canvas
+                                        ref="graphSetpoint"
+                                        class="at-graph-canvas"
+                                        width="900"
+                                        height="180"
+                                    ></canvas>
+                                </div>
+
+                                <!-- Graph 3: PID Error -->
+                                <div class="at-graph-panel">
+                                    <div class="at-graph-header">
+                                        <span class="at-graph-title">PID ERROR (GYRO − SETPOINT)</span>
+                                        <div class="at-graph-toggles">
+                                            <button
+                                                v-for="ax in graphAxes"
+                                                :key="'g3-' + ax.name"
+                                                :class="['at-axis-toggle', { active: graphToggles.pidError[ax.name] }]"
+                                                :style="{ '--ax-color': ax.color }"
+                                                @click="
+                                                    graphToggles.pidError[ax.name] = !graphToggles.pidError[ax.name];
+                                                    renderGraphs();
+                                                "
+                                            >
+                                                {{ ax.label }}
+                                            </button>
+                                        </div>
+                                        <div class="at-graph-zoom">
+                                            <button @click="graphZoom('pidError', -1)">−</button>
+                                            <button @click="graphZoom('pidError', 0)">Reset</button>
+                                            <button @click="graphZoom('pidError', 1)">+</button>
+                                        </div>
+                                    </div>
+                                    <canvas
+                                        ref="graphPidError"
+                                        class="at-graph-canvas"
+                                        width="900"
+                                        height="180"
+                                    ></canvas>
+                                </div>
+
+                                <!-- Graph 4: Freq vs Throttle Spectrogram -->
+                                <div class="at-graph-panel">
+                                    <div class="at-graph-header">
+                                        <span class="at-graph-title">FREQUENCY vs THROTTLE</span>
+                                        <div class="at-graph-zoom">
+                                            <button @click="graphZoom('spectrogram', -1)">−</button>
+                                            <button @click="graphZoom('spectrogram', 0)">Reset</button>
+                                            <button @click="graphZoom('spectrogram', 1)">+</button>
+                                        </div>
+                                    </div>
+                                    <canvas
+                                        ref="graphSpectrogram"
+                                        class="at-graph-canvas at-graph-canvas--tall"
+                                        width="900"
+                                        height="260"
+                                    ></canvas>
                                     <div class="at-spectrogram-legend">
                                         <span class="at-sg-quiet">quiet</span>
-                                        <canvas ref="spectrogramLegend" width="80" height="12"></canvas>
+                                        <canvas ref="spectrogramLegend" width="100" height="12"></canvas>
                                         <span class="at-sg-loud">loud</span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- ═══ ANALYSIS RESULTS ═══ -->
+                            <div class="at-results-box">{{ analysisResult }}</div>
+
+                            <!-- ═══ Extended Analysis ═══ -->
+                            <div v-if="extendedAnalysis" class="at-extended-analysis">
+                                <div class="at-ext-section">
+                                    <div class="at-ext-header">THROTTLE BAND BREAKDOWN</div>
+                                    <div class="at-ext-body">
+                                        <div class="at-throttle-bands">
+                                            <div
+                                                v-for="(band, idx) in extendedAnalysis.throttleBands"
+                                                :key="'tb-' + idx"
+                                                class="at-band-bar"
+                                                :style="{ '--band-pct': band.pct + '%' }"
+                                            >
+                                                <span class="at-band-label">{{ band.label }}</span>
+                                                <div class="at-band-fill"></div>
+                                                <span class="at-band-val">{{
+                                                    band.rms !== null ? band.rms.toFixed(1) : "—"
+                                                }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="at-ext-section">
+                                    <div class="at-ext-header">MOTOR SPREAD PER THROTTLE BAND</div>
+                                    <div class="at-ext-body at-mono">{{ extendedAnalysis.motorSpreadText }}</div>
+                                </div>
+
+                                <div class="at-ext-section">
+                                    <div class="at-ext-header">PITCH TRACKING — STEP RESPONSE</div>
+                                    <div class="at-ext-body at-mono">{{ extendedAnalysis.stepResponseText }}</div>
+                                </div>
+
+                                <div v-if="extendedAnalysis.itermBiasText" class="at-ext-section">
+                                    <div class="at-ext-header">I-TERM BIAS DETECTION</div>
+                                    <div class="at-ext-body at-mono">{{ extendedAnalysis.itermBiasText }}</div>
+                                </div>
+                            </div>
+
+                            <!-- ═══ PID Output — Old vs New ═══ -->
+                            <div v-if="logPidOutput" class="at-log-pid-section">
+                                <div class="at-ext-header">PID RECOMMENDATIONS — OLD vs NEW</div>
+                                <table class="at-pid-table at-log-pid-table">
+                                    <thead>
+                                        <tr>
+                                            <th></th>
+                                            <th colspan="3">OLD (from BBL)</th>
+                                            <th colspan="3">NEW (recommended)</th>
+                                        </tr>
+                                        <tr>
+                                            <th></th>
+                                            <th>P</th>
+                                            <th>I</th>
+                                            <th>D</th>
+                                            <th>P</th>
+                                            <th>I</th>
+                                            <th>D</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="ax in ['roll', 'pitch', 'yaw']"
+                                            :key="'pid-' + ax"
+                                            :class="'at-pid-row at-pid-row--' + ax"
+                                        >
+                                            <td class="at-pid-axis-label">{{ ax.toUpperCase() }}</td>
+                                            <td class="at-pid-num">{{ logPidOutput.old[ax].P }}</td>
+                                            <td class="at-pid-num">{{ logPidOutput.old[ax].I }}</td>
+                                            <td class="at-pid-num">{{ logPidOutput.old[ax].D }}</td>
+                                            <td class="at-pid-num at-pid-num--new">{{ logPidOutput.new[ax].P }}</td>
+                                            <td class="at-pid-num at-pid-num--new">{{ logPidOutput.new[ax].I }}</td>
+                                            <td class="at-pid-num at-pid-num--new">{{ logPidOutput.new[ax].D }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <div class="at-pid-actions">
+                                    <button class="at-apply-btn" :disabled="!canApplyLogPids" @click="applyLogPidsToFC">
+                                        ✓ APPLY NEW PIDs TO FC
+                                    </button>
+                                    <button class="at-copy-btn" @click="copyLogPids">{{ logPidCopyBtnText }}</button>
+                                </div>
+                            </div>
+
+                            <!-- ═══ Credit ═══ -->
+                            <div class="at-credit-line">
+                                By Simon Jardine –
+                                <a href="https://aerobot2.com" target="_blank" rel="noopener">aerobot2.com</a>
                             </div>
 
                             <!-- ═══ SysID / Chirp frequency-response results ═══ -->
@@ -1712,6 +1905,307 @@ function _buildSpectrogramData(rows, sampleRate) {
     };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Freq-vs-Throttle Spectrogram (2D heatmap) — adapted from Blackbox Explorer
+// ─────────────────────────────────────────────────────────────────────────────
+function _buildFreqVsThrottleData(rows, sampleRate) {
+    const NUM_THROTTLE_BINS = 100;
+    const CHUNK_MS = 300;
+    const chunkLen = Math.max(64, Math.round((sampleRate * CHUNK_MS) / 1000));
+    const fftSize = _nextPow2(chunkLen);
+    const halfN = fftSize >> 1;
+    const freqBinHz = sampleRate / fftSize;
+    const maxFreqHz = 500;
+    const maxBin = Math.min(halfN, Math.ceil(maxFreqHz / freqBinHz));
+    const hann = _hannWindow(fftSize);
+    const hopLen = Math.max(1, Math.floor(chunkLen / 2));
+
+    // Matrix: [throttleBin][freqBin] accumulator
+    const matrix = [];
+    const counts = new Int32Array(NUM_THROTTLE_BINS);
+    for (let i = 0; i < NUM_THROTTLE_BINS; i++) {
+        matrix.push(new Float64Array(maxBin));
+    }
+
+    const signal = rows.map((r) => Number(r["gyroADC[0]"] ?? 0));
+    const throttles = rows.map((r) => Number(r["rcCommand[3]"] ?? 1000));
+
+    for (let start = 0; start + chunkLen <= signal.length; start += hopLen) {
+        // Average throttle for this chunk
+        let thrSum = 0;
+        for (let i = start; i < start + chunkLen; i++) thrSum += throttles[i];
+        const avgThr = thrSum / chunkLen;
+        const thrPct = Math.max(0, Math.min(99.9, (avgThr - 1000) / 10));
+        const thrBin = Math.floor(thrPct);
+
+        // FFT this chunk
+        const re = new Float64Array(fftSize);
+        const im = new Float64Array(fftSize);
+        for (let i = 0; i < chunkLen && i < fftSize; i++) {
+            re[i] = signal[start + i] * hann[i];
+        }
+        fftInPlace(re, im);
+
+        // Accumulate magnitudes
+        for (let k = 0; k < maxBin; k++) {
+            matrix[thrBin][k] += Math.sqrt(re[k] * re[k] + im[k] * im[k]) / fftSize;
+        }
+        counts[thrBin]++;
+    }
+
+    // Average each bin
+    for (let t = 0; t < NUM_THROTTLE_BINS; t++) {
+        if (counts[t] > 1) {
+            for (let k = 0; k < maxBin; k++) {
+                matrix[t][k] /= counts[t];
+            }
+        }
+    }
+
+    return { matrix, counts, maxBin, freqBinHz, maxFreqHz, sampleRate };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extended Analysis — ported from aerotune7
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _analyzeThrottleBands(rows) {
+    const BAND_COUNT = 10;
+    const sumSq = new Float64Array(BAND_COUNT);
+    const count = new Int32Array(BAND_COUNT);
+
+    for (const row of rows) {
+        const thr = Number(row["rcCommand[3]"] ?? 1000);
+        const thrPct = Math.max(0, Math.min(99.9, (thr - 1000) / 10));
+        const band = Math.floor(thrPct / 10);
+        // Prefer unfiltered gyro; fall back to filtered
+        const noise =
+            row["gyroUnfilt[0]"] !== undefined ? Number(row["gyroUnfilt[0]"] ?? 0) : Number(row["gyroADC[0]"] ?? 0);
+        sumSq[band] += noise * noise;
+        count[band]++;
+    }
+
+    const bands = [];
+    let maxRms = 0;
+    for (let i = 0; i < BAND_COUNT; i++) {
+        const rms = count[i] >= 10 ? Math.sqrt(sumSq[i] / count[i]) : null;
+        if (rms !== null && rms > maxRms) maxRms = rms;
+        bands.push({
+            label: `${i * 10}–${(i + 1) * 10}%`,
+            rms,
+            count: count[i],
+        });
+    }
+    // Normalize for bar display
+    for (const b of bands) {
+        b.pct = b.rms !== null && maxRms > 0 ? (b.rms / maxRms) * 100 : 0;
+    }
+    return bands;
+}
+
+function _analyzeMotorSpread(rows, motorPoles) {
+    const erpmKeys = Object.keys(rows[0] || {}).filter((k) => /erpm/i.test(k) || /motor\[/i.test(k));
+    if (erpmKeys.length === 0) return "No eRPM/motor data in log — enable bidirectional DShot for motor telemetry.";
+
+    const BAND_COUNT = 10;
+
+    // Per motor, per throttle band: collect frequencies
+    const motorBands = {};
+    for (const key of erpmKeys) motorBands[key] = Array.from({ length: BAND_COUNT }, () => []);
+
+    for (const row of rows) {
+        const thr = Number(row["rcCommand[3]"] ?? 1000);
+        const thrPct = Math.max(0, Math.min(99.9, (thr - 1000) / 10));
+        const band = Math.floor(thrPct / 10);
+        for (const key of erpmKeys) {
+            const val = Math.abs(Number(row[key] ?? 0));
+            if (val > 0) {
+                // BBL stores eRPM/100; convert to Hz
+                const freqHz = (val * 100) / 60;
+                motorBands[key][band].push(freqHz);
+            }
+        }
+    }
+
+    const lines = [];
+    for (let band = 0; band < BAND_COUNT; band++) {
+        const motors = erpmKeys
+            .map((key) => {
+                const vals = motorBands[key][band];
+                if (vals.length < 5) return null;
+                vals.sort((a, b) => a - b);
+                return {
+                    name: key.replace(/[[\]]/g, ""),
+                    avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+                    min: Math.round(vals[0]),
+                    max: Math.round(vals[vals.length - 1]),
+                    p25: Math.round(vals[Math.floor(vals.length * 0.25)]),
+                    p75: Math.round(vals[Math.floor(vals.length * 0.75)]),
+                };
+            })
+            .filter(Boolean);
+
+        if (motors.length === 0) continue;
+        const avgs = motors.map((m) => m.avg);
+        const spread = Math.max(...avgs) - Math.min(...avgs);
+        const spreadLabel = spread > 30 ? "⚠️ HIGH" : spread > 15 ? "MODERATE" : "✅ LOW";
+        lines.push(
+            `${band * 10}–${(band + 1) * 10}% throttle: spread ${spread}Hz (${spreadLabel})  [${motors.map((m) => `${m.name}:${m.avg}Hz`).join(", ")}]`,
+        );
+    }
+    return lines.length > 0 ? lines.join("\n") : "Insufficient motor data across throttle bands.";
+}
+
+function _analyzeStepResponse(rows, sampleRate) {
+    const axes = [
+        { name: "Roll", spKey: "setpoint[0]", gyroKey: "gyroADC[0]" },
+        { name: "Pitch", spKey: "setpoint[1]", gyroKey: "gyroADC[1]" },
+    ];
+    const samplePeriodMs = 1000 / sampleRate;
+    const detFrames = Math.max(5, Math.round(sampleRate * 0.006));
+    const afterFrames = Math.round(sampleRate * 0.15);
+    const cooldown = Math.round(sampleRate * 0.15);
+
+    const results = [];
+    for (const axis of axes) {
+        const steps = [];
+        let lastStepEnd = 0;
+        const iStart = 20 + detFrames;
+
+        for (let i = iStart; i + afterFrames < rows.length; i++) {
+            if (i < lastStepEnd + cooldown) continue;
+            const spCurr = Number(rows[i][axis.spKey] ?? 0);
+            const spPrev = Number(rows[i - detFrames][axis.spKey] ?? 0);
+            const delta = spCurr - spPrev;
+            if (Math.abs(delta) < 60) continue;
+
+            const direction = delta > 0 ? 1 : -1;
+            const baseGyro = Number(rows[i][axis.gyroKey] ?? 0);
+            let peakOvershoot = 0;
+            let delayFrames = -1;
+            let settlingFrames = -1;
+
+            for (let j = 0; j < afterFrames && i + j < rows.length; j++) {
+                const g = Number(rows[i + j][axis.gyroKey] ?? 0);
+                const overshoot = (g - baseGyro - delta) * direction;
+                if (delayFrames < 0 && (g - baseGyro) * direction > Math.abs(delta) * 0.5) delayFrames = j;
+                if (settlingFrames < 0 && (g - baseGyro) * direction > Math.abs(delta) * 0.9) settlingFrames = j;
+                if (overshoot > peakOvershoot) peakOvershoot = overshoot;
+            }
+
+            if (delayFrames < 0) continue;
+            if (settlingFrames < 0) settlingFrames = afterFrames;
+
+            const overshootPct = Math.abs(delta) > 0 ? (peakOvershoot / Math.abs(delta)) * 100 : 0;
+            if (overshootPct >= 0 && overshootPct < 200 && delayFrames * samplePeriodMs < 500) {
+                steps.push({
+                    overshootPct,
+                    delayMs: delayFrames * samplePeriodMs,
+                    settlingMs: settlingFrames * samplePeriodMs,
+                });
+            }
+            lastStepEnd = i + afterFrames;
+        }
+
+        if (steps.length < 3) {
+            results.push(
+                `${axis.name}: Insufficient step data (${steps.length} clean steps). Fly with sharper stick inputs.`,
+            );
+            continue;
+        }
+
+        const avgOS = steps.reduce((a, s) => a + s.overshootPct, 0) / steps.length;
+        const avgDelay = steps.reduce((a, s) => a + s.delayMs, 0) / steps.length;
+        const avgSettle = steps.reduce((a, s) => a + s.settlingMs, 0) / steps.length;
+
+        let diagnosis;
+        if (avgOS > 25) diagnosis = `Heavy overshoot (${avgOS.toFixed(0)}%) — P too high or D too low`;
+        else if (avgOS > 15) diagnosis = `Moderate overshoot (${avgOS.toFixed(0)}%) — could use more D`;
+        else if (avgOS < 3) diagnosis = `Very low overshoot (${avgOS.toFixed(0)}%) — could handle more P`;
+        else diagnosis = `Tracking looks good (${avgOS.toFixed(0)}% overshoot)`;
+
+        results.push(
+            `${axis.name}: ${steps.length} steps | overshoot ${avgOS.toFixed(1)}% | delay ${avgDelay.toFixed(1)}ms | settling ${avgSettle.toFixed(1)}ms\n  → ${diagnosis}`,
+        );
+    }
+    return results.join("\n");
+}
+
+function _analyzeItermBias(rows) {
+    // Detect I-term wind-up / bias: sustained non-zero I-term average
+    const axes = [
+        { name: "Roll", key: "axisI[0]" },
+        { name: "Pitch", key: "axisI[1]" },
+        { name: "Yaw", key: "axisI[2]" },
+    ];
+    // Check if axisI fields exist
+    if (!rows[0] || rows[0]["axisI[0]"] === undefined) return null;
+
+    const lines = [];
+    for (const axis of axes) {
+        let sum = 0,
+            count = 0,
+            maxAbs = 0;
+        for (const row of rows) {
+            const v = Number(row[axis.key] ?? 0);
+            sum += v;
+            count++;
+            if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+        }
+        if (count === 0) continue;
+        const avg = sum / count;
+        const biasLabel = Math.abs(avg) > 20 ? "⚠️ SIGNIFICANT BIAS" : Math.abs(avg) > 10 ? "MILD BIAS" : "✅ OK";
+        lines.push(`${axis.name}: avg I-term ${avg.toFixed(1)} | peak ±${maxAbs.toFixed(0)} — ${biasLabel}`);
+        if (Math.abs(avg) > 20) {
+            lines.push(
+                `  → ${axis.name} I-term offset suggests ${avg > 0 ? "CG forward/right" : "CG back/left"} bias or motor imbalance.`,
+            );
+        }
+    }
+    return lines.length > 0 ? lines.join("\n") : null;
+}
+
+function _computeLogPidRecommendations(config, stepText, dTermNoise, motorTemp) {
+    if (!config?.pids) return null;
+
+    const oldPids = {};
+    const newPids = {};
+    for (const ax of ["roll", "pitch", "yaw"]) {
+        const arr = config.pids[ax] || [];
+        const P = arr[0] ?? 0;
+        const I = arr[1] ?? 0;
+        const D = arr[2] ?? 0;
+        oldPids[ax] = { P, I, D };
+
+        // Parse step response to determine adjustments
+        let pAdj = 1.0,
+            dAdj = 1.0;
+        if (stepText) {
+            const axUpper = ax.charAt(0).toUpperCase() + ax.slice(1);
+            if (stepText.includes(`${axUpper}:`) && stepText.includes("Heavy overshoot")) {
+                pAdj = 0.88;
+                dAdj = 1.18;
+            } else if (stepText.includes(`${axUpper}:`) && stepText.includes("Moderate overshoot")) {
+                dAdj = 1.15;
+            } else if (stepText.includes(`${axUpper}:`) && stepText.includes("Very low overshoot")) {
+                pAdj = 1.12;
+            }
+        }
+
+        // D-term noise adjustment
+        if (dTermNoise?.highZone === "HIGH" && motorTemp === "HOT") {
+            dAdj = Math.min(dAdj, 0.9);
+        }
+
+        newPids[ax] = {
+            P: Math.round(clamp(P * pAdj, 10, 200)),
+            I: I, // Keep I unchanged
+            D: ax === "yaw" ? 0 : Math.round(clamp(D * dAdj, 10, 150)),
+        };
+    }
+    return { old: oldPids, new: newPids };
+}
+
 function formatAnalysisResult(r) {
     if (r.error) {
         return `ERROR: ${r.error}`;
@@ -2487,6 +2981,24 @@ export default {
             bblSelectedSession: 0,
             bblBuffer: null,
             spectrogramVisible: false,
+            graphsVisible: false,
+            graphAxes: [
+                { name: "roll", label: "Roll", color: "#e74c3c" },
+                { name: "pitch", label: "Pitch", color: "#3498db" },
+                { name: "yaw", label: "Yaw", color: "#2ecc71" },
+            ],
+            graphToggles: {
+                gyro: { roll: true, pitch: true, yaw: false },
+                setpoint: { roll: true, pitch: true, yaw: false },
+                pidError: { roll: true, pitch: true, yaw: false },
+            },
+            graphZoomLevels: { gyro: 1, setpoint: 1, pidError: 1, spectrogram: 1 },
+            graphPanOffsets: { gyro: 0, setpoint: 0, pidError: 0, spectrogram: 0 },
+            _graphFrames: null,
+            _graphConfig: null,
+            extendedAnalysis: null,
+            logPidOutput: null,
+            logPidCopyBtnText: "📋 COPY NEW PIDs",
             sysidResult: null,
             sysidActiveAxis: "roll",
             sysidZoom: "full",
@@ -2548,6 +3060,9 @@ export default {
         },
         canApplySysID() {
             return !!this.sysidResult && CONFIGURATOR.connectionValid;
+        },
+        canApplyLogPids() {
+            return !!this.logPidOutput && CONFIGURATOR.connectionValid;
         },
         sysidAvailableAxes() {
             if (!this.sysidResult) return [];
@@ -2885,7 +3400,7 @@ export default {
             const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1}: ` : "";
             const result = analyzeLog(frames, this.motorTemp, config);
             this.analysisResult = prefix + formatAnalysisResult(result);
-            this._showSpectrogram(result.spectrogramData);
+            this._processAnalysisGraphs(frames, config, result);
         },
 
         /** Called by the session dropdown — re-analyzes the selected session. */
@@ -2957,56 +3472,265 @@ export default {
                     }
                     const csvResult = analyzeLog(rows, motorTemp);
                     this.analysisResult = formatAnalysisResult(csvResult);
-                    this._showSpectrogram(csvResult.spectrogramData);
+                    this._processAnalysisGraphs(rows, null, csvResult);
                 }
             } catch (err) {
                 this.analysisResult = `ERROR: Failed to read file: ${err.message}`;
             }
         },
 
-        _showSpectrogram(spectrogramData) {
-            if (!spectrogramData || !spectrogramData.slices || spectrogramData.slices.length === 0) {
-                this.spectrogramVisible = false;
-                return;
-            }
-            this.spectrogramVisible = true;
-            // Wait for the canvas ref to be in the DOM
+        _processAnalysisGraphs(frames, config, result) {
+            this._graphFrames = frames;
+            this._graphConfig = config;
+            this.graphsVisible = frames && frames.length > 0;
+
+            // Extended analysis
+            const sampleRate = 1e6 / (config?.misc?.looptime ?? 312);
+            const motorPoles = config?.motor?.poles ?? 14;
+            const throttleBands = _analyzeThrottleBands(frames);
+            const motorSpreadText = _analyzeMotorSpread(frames, motorPoles);
+            const stepResponseText = _analyzeStepResponse(frames, sampleRate);
+            const itermBiasText = _analyzeItermBias(frames);
+            this.extendedAnalysis = { throttleBands, motorSpreadText, stepResponseText, itermBiasText };
+
+            // PID recommendations
+            this.logPidOutput = _computeLogPidRecommendations(
+                config,
+                stepResponseText,
+                result.dTermNoise,
+                this.motorTemp,
+            );
+
+            // Build freq-vs-throttle spectrogram data
+            this._freqVsThrottleData = frames.length >= 64 ? _buildFreqVsThrottleData(frames, sampleRate) : null;
+
             this.$nextTick(() => {
-                this._renderSpectrogram(spectrogramData);
+                this.renderGraphs();
             });
         },
 
-        _renderSpectrogram(data) {
-            const canvas = this.$refs.spectrogramCanvas;
+        renderGraphs() {
+            if (!this._graphFrames || this._graphFrames.length === 0) return;
+            const frames = this._graphFrames;
+            const config = this._graphConfig;
+
+            // Graph 1: Unfiltered Gyros
+            this._renderTimeSeries(this.$refs.graphGyro, frames, {
+                fields: [
+                    {
+                        key: "gyroUnfilt[0]",
+                        fallback: "gyroADC[0]",
+                        color: "#e74c3c",
+                        name: "roll",
+                        visible: this.graphToggles.gyro.roll,
+                    },
+                    {
+                        key: "gyroUnfilt[1]",
+                        fallback: "gyroADC[1]",
+                        color: "#3498db",
+                        name: "pitch",
+                        visible: this.graphToggles.gyro.pitch,
+                    },
+                    {
+                        key: "gyroUnfilt[2]",
+                        fallback: "gyroADC[2]",
+                        color: "#2ecc71",
+                        name: "yaw",
+                        visible: this.graphToggles.gyro.yaw,
+                    },
+                ],
+                zoom: this.graphZoomLevels.gyro,
+                pan: this.graphPanOffsets.gyro,
+                label: "deg/s",
+            });
+
+            // Graph 2: Setpoint
+            this._renderTimeSeries(this.$refs.graphSetpoint, frames, {
+                fields: [
+                    { key: "setpoint[0]", color: "#e74c3c", name: "roll", visible: this.graphToggles.setpoint.roll },
+                    { key: "setpoint[1]", color: "#3498db", name: "pitch", visible: this.graphToggles.setpoint.pitch },
+                    { key: "setpoint[2]", color: "#2ecc71", name: "yaw", visible: this.graphToggles.setpoint.yaw },
+                ],
+                zoom: this.graphZoomLevels.setpoint,
+                pan: this.graphPanOffsets.setpoint,
+                label: "deg/s",
+            });
+
+            // Graph 3: PID Error (gyroADC - setpoint)
+            this._renderTimeSeries(this.$refs.graphPidError, frames, {
+                fields: [
+                    {
+                        key: "gyroADC[0]",
+                        subtract: "setpoint[0]",
+                        color: "#e74c3c",
+                        name: "roll",
+                        visible: this.graphToggles.pidError.roll,
+                    },
+                    {
+                        key: "gyroADC[1]",
+                        subtract: "setpoint[1]",
+                        color: "#3498db",
+                        name: "pitch",
+                        visible: this.graphToggles.pidError.pitch,
+                    },
+                    {
+                        key: "gyroADC[2]",
+                        subtract: "setpoint[2]",
+                        color: "#2ecc71",
+                        name: "yaw",
+                        visible: this.graphToggles.pidError.yaw,
+                    },
+                ],
+                zoom: this.graphZoomLevels.pidError,
+                pan: this.graphPanOffsets.pidError,
+                label: "error",
+            });
+
+            // Graph 4: Freq vs Throttle Spectrogram
+            this._renderFreqVsThrottle(this.$refs.graphSpectrogram, config);
+
+            // Legend
+            this._renderSpectrogramLegend();
+        },
+
+        _renderTimeSeries(canvas, frames, opts) {
             if (!canvas) return;
             const ctx = canvas.getContext("2d");
             const W = canvas.width;
             const H = canvas.height;
-            const { slices, maxBin, maxFreqHz } = data;
-            const numSlices = slices.length;
+            const PAD_L = 48,
+                PAD_R = 8,
+                PAD_T = 4,
+                PAD_B = 18;
+            const plotW = W - PAD_L - PAD_R;
+            const plotH = H - PAD_T - PAD_B;
 
-            // Find global max amplitude for normalisation
+            // Clear
+            ctx.fillStyle = "#0a0e14";
+            ctx.fillRect(0, 0, W, H);
+
+            const zoom = opts.zoom || 1;
+            const totalFrames = frames.length;
+            const visibleFrames = Math.max(100, Math.floor(totalFrames / zoom));
+            const panOffset = Math.min(Math.max(0, opts.pan || 0), Math.max(0, totalFrames - visibleFrames));
+            const startFrame = panOffset;
+            const endFrame = Math.min(startFrame + visibleFrames, totalFrames);
+
+            // Collect data and find Y range
+            let yMin = Infinity,
+                yMax = -Infinity;
+            const traces = [];
+            for (const f of opts.fields) {
+                if (!f.visible) continue;
+                const vals = [];
+                for (let i = startFrame; i < endFrame; i++) {
+                    let v = Number(frames[i]?.[f.key] ?? frames[i]?.[f.fallback] ?? 0);
+                    if (f.subtract) v -= Number(frames[i]?.[f.subtract] ?? 0);
+                    vals.push(v);
+                    if (v < yMin) yMin = v;
+                    if (v > yMax) yMax = v;
+                }
+                traces.push({ vals, color: f.color, name: f.name });
+            }
+
+            if (traces.length === 0 || yMin === Infinity) return;
+
+            // Symmetrical Y range
+            const yAbs = Math.max(Math.abs(yMin), Math.abs(yMax), 10);
+            yMin = -yAbs;
+            yMax = yAbs;
+            const yRange = yMax - yMin;
+
+            // Grid
+            ctx.strokeStyle = "rgba(255,255,255,0.08)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 6]);
+            // Zero line
+            const zeroY = PAD_T + plotH * (yMax / yRange);
+            ctx.beginPath();
+            ctx.moveTo(PAD_L, zeroY);
+            ctx.lineTo(W - PAD_R, zeroY);
+            ctx.stroke();
+            // Horizontal grid
+            const gridSteps = 4;
+            for (let g = 1; g <= gridSteps; g++) {
+                const frac = g / gridSteps;
+                ctx.beginPath();
+                ctx.moveTo(PAD_L, PAD_T + plotH * frac);
+                ctx.lineTo(W - PAD_R, PAD_T + plotH * frac);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // Y-axis labels
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#666";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "right";
+            ctx.fillText(`${Math.round(yMax)}`, PAD_L - 4, PAD_T + 6);
+            ctx.fillText("0", PAD_L - 4, zeroY);
+            ctx.fillText(`${Math.round(yMin)}`, PAD_L - 4, PAD_T + plotH - 6);
+
+            // Draw traces
+            const xStep = plotW / (endFrame - startFrame - 1 || 1);
+            for (const trace of traces) {
+                ctx.strokeStyle = trace.color;
+                ctx.lineWidth = 1.2;
+                ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                for (let i = 0; i < trace.vals.length; i++) {
+                    const x = PAD_L + i * xStep;
+                    const y = PAD_T + plotH * ((yMax - trace.vals[i]) / yRange);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+
+            // Border
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(PAD_L, PAD_T, plotW, plotH);
+        },
+
+        _renderFreqVsThrottle(canvas, config) {
+            if (!canvas || !this._freqVsThrottleData) return;
+            const ctx = canvas.getContext("2d");
+            const W = canvas.width;
+            const H = canvas.height;
+            const PAD_L = 48,
+                PAD_R = 8,
+                PAD_T = 4,
+                PAD_B = 22;
+            const plotW = W - PAD_L - PAD_R;
+            const plotH = H - PAD_T - PAD_B;
+
+            const { matrix, maxBin, maxFreqHz } = this._freqVsThrottleData;
+
+            // Clear
+            ctx.fillStyle = "#0a0e14";
+            ctx.fillRect(0, 0, W, H);
+
+            // Find global max for normalisation
             let globalMax = 0;
-            for (const slice of slices) {
+            for (let t = 0; t < 100; t++) {
                 for (let k = 0; k < maxBin; k++) {
-                    if (slice[k] > globalMax) globalMax = slice[k];
+                    if (matrix[t][k] > globalMax) globalMax = matrix[t][k];
                 }
             }
             if (globalMax === 0) globalMax = 1;
 
-            const img = ctx.createImageData(W, H);
-            const sliceStep = numSlices / W;
-            const binStep = maxBin / H;
-
-            for (let x = 0; x < W; x++) {
-                const si = Math.min(Math.floor(x * sliceStep), numSlices - 1);
-                const slice = slices[si];
-                for (let y = 0; y < H; y++) {
-                    // Y=0 is top = high frequency, Y=H-1 is bottom = 0Hz
-                    const bin = Math.min(Math.floor((H - 1 - y) * binStep), maxBin - 1);
-                    const val = Math.min(1, slice[bin] / globalMax);
-                    // Colormap: black → blue → cyan → yellow → white
-                    const idx = (y * W + x) * 4;
+            // Draw heatmap: X=frequency, Y=throttle%
+            const img = ctx.createImageData(plotW, plotH);
+            for (let px = 0; px < plotW; px++) {
+                const freqBin = Math.min(Math.floor((px / plotW) * maxBin), maxBin - 1);
+                for (let py = 0; py < plotH; py++) {
+                    // py=0 is top=100% throttle, py=plotH-1 is bottom=0% throttle
+                    const thrBin = Math.min(99, Math.floor((1 - py / plotH) * 100));
+                    const val = Math.min(1, matrix[thrBin][freqBin] / globalMax);
+                    const idx = (py * plotW + px) * 4;
+                    // Hot colormap: dark → blue → red → yellow → white
                     const v4 = val * 4;
                     let r, g, b;
                     if (v4 < 1) {
@@ -3014,16 +3738,16 @@ export default {
                         g = 0;
                         b = Math.floor(v4 * 180);
                     } else if (v4 < 2) {
-                        r = 0;
-                        g = Math.floor((v4 - 1) * 255);
-                        b = 180;
+                        r = Math.floor((v4 - 1) * 200);
+                        g = 0;
+                        b = 180 - Math.floor((v4 - 1) * 80);
                     } else if (v4 < 3) {
-                        r = Math.floor((v4 - 2) * 255);
-                        g = 255;
-                        b = 180 - Math.floor((v4 - 2) * 180);
+                        r = 200 + Math.floor((v4 - 2) * 55);
+                        g = Math.floor((v4 - 2) * 200);
+                        b = 100 - Math.floor((v4 - 2) * 100);
                     } else {
                         r = 255;
-                        g = 255;
+                        g = 200 + Math.floor((v4 - 3) * 55);
                         b = Math.floor((v4 - 3) * 255);
                     }
                     img.data[idx] = r;
@@ -3032,58 +3756,210 @@ export default {
                     img.data[idx + 3] = 255;
                 }
             }
-            ctx.putImageData(img, 0, 0);
+            ctx.putImageData(img, PAD_L, PAD_T);
 
-            // Frequency labels on Y axis
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
-            ctx.fillRect(0, 0, 42, H);
-            ctx.font = "10px monospace";
-            ctx.fillStyle = "#ccc";
-            ctx.textBaseline = "middle";
-            const freqLabels = [0, 100, 200, 300, 400, 500];
-            for (const fq of freqLabels) {
-                const y = H - (fq / maxFreqHz) * H;
-                if (y >= 0 && y <= H) {
-                    ctx.fillText(`${fq}`, 2, y);
-                    // Thin gridline
-                    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-                    ctx.beginPath();
-                    ctx.moveTo(42, y);
-                    ctx.lineTo(W, y);
-                    ctx.stroke();
+            // Filter overlay lines
+            const drawFilterLine = (freqHz, label, color) => {
+                if (!freqHz || freqHz <= 0 || freqHz >= maxFreqHz) return;
+                const x = PAD_L + (freqHz / maxFreqHz) * plotW;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+                ctx.moveTo(x, PAD_T);
+                ctx.lineTo(x, PAD_T + plotH);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.font = "9px monospace";
+                ctx.fillStyle = color;
+                ctx.textAlign = "left";
+                ctx.fillText(label, x + 2, PAD_T + 10);
+            };
+
+            if (config) {
+                drawFilterLine(
+                    config.dtermFilters?.lpf1Hz,
+                    `D-LPF1 ${config.dtermFilters?.lpf1Hz}Hz`,
+                    "rgba(0,180,200,0.7)",
+                );
+                drawFilterLine(
+                    config.dtermFilters?.lpf2Hz,
+                    `D-LPF2 ${config.dtermFilters?.lpf2Hz}Hz`,
+                    "rgba(16,140,170,0.7)",
+                );
+                drawFilterLine(
+                    config.dtermFilters?.yawLpfHz,
+                    `Yaw LPF ${config.dtermFilters?.yawLpfHz}Hz`,
+                    "rgba(80,180,80,0.7)",
+                );
+                // Dynamic notch range
+                const dynMin = config.dynamicNotch?.minHz;
+                const dynMax = config.dynamicNotch?.maxHz;
+                if (dynMin > 0 && dynMax > dynMin) {
+                    drawFilterLine(dynMin, `Dyn notch min`, "rgba(160,100,255,0.5)");
+                    drawFilterLine(dynMax, `Dyn notch max`, "rgba(160,100,255,0.5)");
+                    // Shaded range
+                    const x1 = PAD_L + (dynMin / maxFreqHz) * plotW;
+                    const x2 = PAD_L + (dynMax / maxFreqHz) * plotW;
+                    ctx.fillStyle = "rgba(160,100,255,0.08)";
+                    ctx.fillRect(x1, PAD_T, x2 - x1, plotH);
                 }
             }
 
-            // Render legend gradient
-            const legend = this.$refs.spectrogramLegend;
-            if (legend) {
-                const lctx = legend.getContext("2d");
-                const lw = legend.width;
-                const lh = legend.height;
-                for (let x = 0; x < lw; x++) {
-                    const v4 = (x / lw) * 4;
-                    let r, g, b2;
-                    if (v4 < 1) {
-                        r = 0;
-                        g = 0;
-                        b2 = Math.floor(v4 * 180);
-                    } else if (v4 < 2) {
-                        r = 0;
-                        g = Math.floor((v4 - 1) * 255);
-                        b2 = 180;
-                    } else if (v4 < 3) {
-                        r = Math.floor((v4 - 2) * 255);
-                        g = 255;
-                        b2 = 180 - Math.floor((v4 - 2) * 180);
-                    } else {
-                        r = 255;
-                        g = 255;
-                        b2 = Math.floor((v4 - 3) * 255);
+            // Motor RPM tracking line (cyan) from eRPM data
+            const erpmKeys = Object.keys(this._graphFrames[0] || {}).filter((k) => /erpm/i.test(k));
+            if (erpmKeys.length > 0 && config) {
+                // For each throttle bin, compute average motor frequency
+                ctx.strokeStyle = "rgba(0,255,255,0.7)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                let started = false;
+                for (let thrBin = 0; thrBin < 100; thrBin++) {
+                    let erpmSum = 0,
+                        erpmCount = 0;
+                    for (const row of this._graphFrames) {
+                        const thr = Number(row["rcCommand[3]"] ?? 1000);
+                        const rowBin = Math.floor(Math.max(0, Math.min(99.9, (thr - 1000) / 10)));
+                        if (Math.abs(rowBin - thrBin) <= 2) {
+                            for (const ek of erpmKeys) {
+                                const v = Math.abs(Number(row[ek] ?? 0));
+                                if (v > 0) {
+                                    erpmSum += v;
+                                    erpmCount++;
+                                }
+                            }
+                        }
                     }
-                    lctx.fillStyle = `rgb(${r},${g},${b2})`;
-                    lctx.fillRect(x, 0, 1, lh);
+                    if (erpmCount < 5) continue;
+                    const avgErpm = erpmSum / erpmCount;
+                    const freqHz = (avgErpm * 100) / 60;
+                    if (freqHz < 5 || freqHz > maxFreqHz) continue;
+                    const x = PAD_L + (freqHz / maxFreqHz) * plotW;
+                    const y = PAD_T + plotH * (1 - thrBin / 100);
+                    if (!started) {
+                        ctx.moveTo(x, y);
+                        started = true;
+                    } else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                // Label
+                if (started) {
+                    ctx.font = "9px monospace";
+                    ctx.fillStyle = "rgba(0,255,255,0.8)";
+                    ctx.fillText("Motor RPM", PAD_L + plotW - 60, PAD_T + plotH - 6);
                 }
             }
+
+            // Axis labels
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#888";
+            ctx.textBaseline = "top";
+            ctx.textAlign = "center";
+            // X axis: frequency
+            for (let f = 0; f <= maxFreqHz; f += 100) {
+                const x = PAD_L + (f / maxFreqHz) * plotW;
+                ctx.fillText(`${f}`, x, PAD_T + plotH + 4);
+            }
+            // Y axis: throttle%
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "right";
+            for (let t = 0; t <= 100; t += 20) {
+                const y = PAD_T + plotH * (1 - t / 100);
+                ctx.fillText(`${t}%`, PAD_L - 4, y);
+            }
+
+            // Border
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.strokeRect(PAD_L, PAD_T, plotW, plotH);
+        },
+
+        _renderSpectrogramLegend() {
+            const legend = this.$refs.spectrogramLegend;
+            if (!legend) return;
+            const lctx = legend.getContext("2d");
+            const lw = legend.width;
+            const lh = legend.height;
+            for (let x = 0; x < lw; x++) {
+                const v4 = (x / lw) * 4;
+                let r, g, b;
+                if (v4 < 1) {
+                    r = 0;
+                    g = 0;
+                    b = Math.floor(v4 * 180);
+                } else if (v4 < 2) {
+                    r = Math.floor((v4 - 1) * 200);
+                    g = 0;
+                    b = 180 - Math.floor((v4 - 1) * 80);
+                } else if (v4 < 3) {
+                    r = 200 + Math.floor((v4 - 2) * 55);
+                    g = Math.floor((v4 - 2) * 200);
+                    b = 100 - Math.floor((v4 - 2) * 100);
+                } else {
+                    r = 255;
+                    g = 200 + Math.floor((v4 - 3) * 55);
+                    b = Math.floor((v4 - 3) * 255);
+                }
+                lctx.fillStyle = `rgb(${r},${g},${b})`;
+                lctx.fillRect(x, 0, 1, lh);
+            }
+        },
+
+        graphZoom(graph, direction) {
+            if (direction === 0) {
+                this.graphZoomLevels[graph] = 1;
+                this.graphPanOffsets[graph] = 0;
+            } else if (direction > 0) {
+                this.graphZoomLevels[graph] = Math.min(32, this.graphZoomLevels[graph] * 2);
+            } else {
+                this.graphZoomLevels[graph] = Math.max(1, this.graphZoomLevels[graph] / 2);
+            }
+            this.renderGraphs();
+        },
+
+        applyLogPidsToFC() {
+            if (!this.logPidOutput) return;
+            const pids = this.logPidOutput.new;
+            const store = usePidTuningStore();
+            FC.PIDS[0][0] = pids.roll.P;
+            FC.PIDS[0][1] = pids.roll.I;
+            FC.PIDS[0][2] = pids.roll.D;
+            FC.PIDS[1][0] = pids.pitch.P;
+            FC.PIDS[1][1] = pids.pitch.I;
+            FC.PIDS[1][2] = pids.pitch.D;
+            FC.PIDS[2][0] = pids.yaw.P;
+            FC.PIDS[2][1] = pids.yaw.I;
+            FC.PIDS[2][2] = pids.yaw.D;
+            store.needsSave = true;
+            mspHelper.sendPidData(() => {
+                MSP.send_message(MSPCodes.MSP_EEPROM_WRITE);
+            });
+        },
+
+        copyLogPids() {
+            if (!this.logPidOutput) return;
+            const p = this.logPidOutput.new;
+            const text = [
+                `Roll:  P=${p.roll.P} I=${p.roll.I} D=${p.roll.D}`,
+                `Pitch: P=${p.pitch.P} I=${p.pitch.I} D=${p.pitch.D}`,
+                `Yaw:   P=${p.yaw.P} I=${p.yaw.I} D=${p.yaw.D}`,
+                "",
+                `set p_roll = ${p.roll.P}`,
+                `set i_roll = ${p.roll.I}`,
+                `set d_roll = ${p.roll.D}`,
+                `set p_pitch = ${p.pitch.P}`,
+                `set i_pitch = ${p.pitch.I}`,
+                `set d_pitch = ${p.pitch.D}`,
+                `set p_yaw = ${p.yaw.P}`,
+                `set i_yaw = ${p.yaw.I}`,
+            ].join("\n");
+            navigator.clipboard.writeText(text).then(() => {
+                this.logPidCopyBtnText = "✔ Copied!";
+                setTimeout(() => {
+                    this.logPidCopyBtnText = "📋 COPY NEW PIDs";
+                }, 2000);
+            });
         },
 
         applyChirpPropDefaults(propInch) {

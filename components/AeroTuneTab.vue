@@ -1888,7 +1888,7 @@ function _buildSpectrogramData(rows, sampleRate) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Freq-vs-Throttle Spectrogram (2D heatmap) — adapted from Blackbox Explorer
 // ─────────────────────────────────────────────────────────────────────────────
-function _buildFreqVsThrottleData(rows, sampleRate) {
+function _buildFreqVsThrottleData(rows, sampleRate, motorPoles = 14) {
     const NUM_THROTTLE_BINS = 100;
     const CHUNK_MS = 300;
     const chunkLen = Math.max(64, Math.round((sampleRate * CHUNK_MS) / 1000));
@@ -1900,6 +1900,30 @@ function _buildFreqVsThrottleData(rows, sampleRate) {
     const hann = _hannWindow(fftSize);
     const hopLen = Math.max(1, Math.floor(chunkLen / 2));
 
+    // Throttle values — rcCommand[3] is raw RC throttle (1000-2000 µs range)
+    const signal = rows.map((r) => Number(r["gyroADC[0]"] ?? 0));
+    const throttles = rows.map((r) => {
+        const v = Number(r["rcCommand[3]"]);
+        return Number.isNaN(v) ? 1000 : v;
+    });
+
+    // First pass: find the actual throttle range across all chunks (like Blackbox Explorer)
+    // This ensures the Y axis always spans the full range of data, even if only partial throttle was used.
+    let thrMin = Infinity,
+        thrMax = -Infinity;
+    for (let start = 0; start + chunkLen <= signal.length; start += hopLen) {
+        let s = 0;
+        for (let i = start; i < start + chunkLen; i++) s += throttles[i];
+        const avg = s / chunkLen;
+        if (avg < thrMin) thrMin = avg;
+        if (avg > thrMax) thrMax = avg;
+    }
+    if (!isFinite(thrMin) || thrMax <= thrMin) {
+        thrMin = 1000;
+        thrMax = 2000;
+    }
+    const thrRange = thrMax - thrMin;
+
     // Matrix: [throttleBin][freqBin] accumulator
     const matrix = [];
     const counts = new Int32Array(NUM_THROTTLE_BINS);
@@ -1907,18 +1931,14 @@ function _buildFreqVsThrottleData(rows, sampleRate) {
         matrix.push(new Float64Array(maxBin));
     }
 
-    const signal = rows.map((r) => Number(r["gyroADC[0]"] ?? 0));
-    const throttles = rows.map((r) => Number(r["rcCommand[3]"] ?? 1000));
-
+    // Second pass: FFT chunks, bin by normalized throttle position
     for (let start = 0; start + chunkLen <= signal.length; start += hopLen) {
-        // Average throttle for this chunk
         let thrSum = 0;
         for (let i = start; i < start + chunkLen; i++) thrSum += throttles[i];
         const avgThr = thrSum / chunkLen;
-        const thrPct = Math.max(0, Math.min(99.9, (avgThr - 1000) / 10));
-        const thrBin = Math.floor(thrPct);
+        // Normalize throttle to 0-99 using actual observed range
+        const thrBin = Math.min(99, Math.max(0, Math.floor(((avgThr - thrMin) / thrRange) * 100)));
 
-        // FFT this chunk
         const re = new Float64Array(fftSize);
         const im = new Float64Array(fftSize);
         for (let i = 0; i < chunkLen && i < fftSize; i++) {
@@ -1926,7 +1946,6 @@ function _buildFreqVsThrottleData(rows, sampleRate) {
         }
         fftInPlace(re, im);
 
-        // Accumulate magnitudes
         for (let k = 0; k < maxBin; k++) {
             matrix[thrBin][k] += Math.sqrt(re[k] * re[k] + im[k] * im[k]) / fftSize;
         }
@@ -1942,31 +1961,32 @@ function _buildFreqVsThrottleData(rows, sampleRate) {
         }
     }
 
-    // Pre-compute average motor frequency (Hz) per throttle bin for the cyan RPM line
+    // Pre-compute average motor noise frequency (Hz) per throttle bin for the cyan RPM line.
+    // Motor fundamental noise = eRPM / 60 / polePairs (same formula as _estimateMotorFreqs).
+    const polePairs = Math.max(1, motorPoles / 2);
     const erpmKeys = Object.keys(rows[0] || {}).filter((k) => /erpm/i.test(k));
-    const rpmPerBin = new Float64Array(NUM_THROTTLE_BINS); // avg motor Hz per throttle bin
+    const rpmPerBin = new Float64Array(NUM_THROTTLE_BINS);
     if (erpmKeys.length > 0) {
         const rpmSums = new Float64Array(NUM_THROTTLE_BINS);
         const rpmCounts = new Int32Array(NUM_THROTTLE_BINS);
         for (const row of rows) {
-            const thr = Number(row["rcCommand[3]"] ?? 1000);
-            const thrPct = Math.max(0, Math.min(99.9, (thr - 1000) / 10));
-            const tb = Math.floor(thrPct);
+            const thr = Number(row["rcCommand[3]"]);
+            if (Number.isNaN(thr)) continue;
+            const tb = Math.min(99, Math.max(0, Math.floor(((thr - thrMin) / thrRange) * 100)));
             for (const ek of erpmKeys) {
                 const v = Math.abs(Number(row[ek] ?? 0));
-                if (v > 0) {
+                if (v > 100) {
                     rpmSums[tb] += v;
                     rpmCounts[tb]++;
                 }
             }
         }
         for (let t = 0; t < NUM_THROTTLE_BINS; t++) {
-            // eRPM stored as eRPM/100 in BBL → actual_eRPM = value*100 → Hz = eRPM/60
-            rpmPerBin[t] = rpmCounts[t] >= 5 ? ((rpmSums[t] / rpmCounts[t]) * 100) / 60 : 0;
+            rpmPerBin[t] = rpmCounts[t] >= 5 ? rpmSums[t] / rpmCounts[t] / 60 / polePairs : 0;
         }
     }
 
-    return { matrix, counts, maxBin, freqBinHz, maxFreqHz, sampleRate, rpmPerBin };
+    return { matrix, counts, maxBin, freqBinHz, maxFreqHz, sampleRate, rpmPerBin, thrMin, thrMax };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3504,7 +3524,10 @@ export default {
             );
 
             // Build freq-vs-throttle spectrogram data
-            this._freqVsThrottleData = frames.length >= 64 ? _buildFreqVsThrottleData(frames, sampleRate) : null;
+            const rawHeader = config?._raw ?? {};
+            const motorPoles = config?.motor?.poles ?? parseInt(rawHeader["motor_poles"] ?? "14", 10);
+            this._freqVsThrottleData =
+                frames.length >= 64 ? _buildFreqVsThrottleData(frames, sampleRate, motorPoles) : null;
 
             this.$nextTick(() => {
                 this.renderGraphs();
@@ -3734,7 +3757,7 @@ export default {
             const plotW = W - PAD_L - PAD_R;
             const plotH = H - PAD_T - PAD_B;
 
-            const { matrix, maxBin, maxFreqHz, rpmPerBin } = this._freqVsThrottleData;
+            const { matrix, maxBin, maxFreqHz, rpmPerBin, thrMin, thrMax } = this._freqVsThrottleData;
 
             // Clear — dark background
             ctx.fillStyle = "hsl(0,0%,4%)";
@@ -3901,11 +3924,16 @@ export default {
                 const x = PAD_L + (f / maxFreqHz) * plotW;
                 ctx.fillText(`${f}`, x, PAD_T + plotH + 4);
             }
+            // Y axis labels — show actual throttle % range from the log data
             ctx.textBaseline = "middle";
             ctx.textAlign = "right";
-            for (let t = 0; t <= 100; t += 20) {
-                const y = PAD_T + plotH * (1 - t / 100);
-                ctx.fillText(`${t}%`, PAD_L - 4, y);
+            const thrMinPct = Math.round(Math.max(0, (thrMin - 1000) / 10));
+            const thrMaxPct = Math.round(Math.min(100, (thrMax - 1000) / 10));
+            for (let step = 0; step <= 4; step++) {
+                const frac = step / 4;
+                const pct = Math.round(thrMinPct + (thrMaxPct - thrMinPct) * frac);
+                const y = PAD_T + plotH * (1 - frac);
+                ctx.fillText(`${pct}%`, PAD_L - 4, y);
             }
 
             // Border

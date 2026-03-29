@@ -2962,6 +2962,25 @@ function loadStoredInputs() {
     }
 }
 
+// Module-level cache — preserves log analysis state when navigating between BF Configurator tabs.
+// The Vue component is fully unmounted/remounted each time the user switches tabs, so we keep
+// the large data structures (buffer, frames, computed results) here so they survive remounts.
+const _logCache = {
+    hasData: false,
+    analysisResult: null,
+    fileName: null,
+    bblBuffer: null,
+    bblSessions: [],
+    bblSelectedSession: 0,
+    _graphFrames: null,
+    _graphConfig: null,
+    _freqVsThrottleData: null,
+    extendedAnalysis: null,
+    logPidOutput: null,
+    graphsVisible: false,
+    sysidResult: null,
+};
+
 export default {
     name: "AeroTuneTab",
     components: { BaseTab },
@@ -3043,6 +3062,27 @@ export default {
             chirpConfirmText: "",
             advancedOpen: false,
         };
+    },
+
+    mounted() {
+        // Restore log analysis state if the user previously loaded a file in this session.
+        if (_logCache.hasData) {
+            this.analysisResult = _logCache.analysisResult;
+            this.fileName = _logCache.fileName;
+            this.bblBuffer = _logCache.bblBuffer;
+            this.bblSessions = _logCache.bblSessions;
+            this.bblSelectedSession = _logCache.bblSelectedSession;
+            this._graphFrames = _logCache._graphFrames;
+            this._graphConfig = _logCache._graphConfig;
+            this._freqVsThrottleData = _logCache._freqVsThrottleData;
+            this.extendedAnalysis = _logCache.extendedAnalysis;
+            this.logPidOutput = _logCache.logPidOutput;
+            this.graphsVisible = _logCache.graphsVisible;
+            this.sysidResult = _logCache.sysidResult;
+            if (this._graphFrames?.length) {
+                this.$nextTick(() => this.renderGraphs());
+            }
+        }
     },
 
     computed: {
@@ -3419,6 +3459,7 @@ export default {
                 } catch (sysidErr) {
                     this.analysisResult += `\nSysID analysis error: ${sysidErr.message}`;
                 }
+                this._saveAnalysisCache();
                 return;
             }
 
@@ -3438,6 +3479,22 @@ export default {
             } catch (err) {
                 this.analysisResult = `ERROR: Failed to decode session ${sessionIdx + 1}: ${err.message}`;
             }
+        },
+
+        _saveAnalysisCache() {
+            _logCache.hasData = true;
+            _logCache.analysisResult = this.analysisResult;
+            _logCache.fileName = this.fileName;
+            _logCache.bblBuffer = this.bblBuffer;
+            _logCache.bblSessions = this.bblSessions;
+            _logCache.bblSelectedSession = this.bblSelectedSession;
+            _logCache._graphFrames = this._graphFrames;
+            _logCache._graphConfig = this._graphConfig;
+            _logCache._freqVsThrottleData = this._freqVsThrottleData;
+            _logCache.extendedAnalysis = this.extendedAnalysis;
+            _logCache.logPidOutput = this.logPidOutput;
+            _logCache.graphsVisible = this.graphsVisible;
+            _logCache.sysidResult = this.sysidResult;
         },
 
         onFileChange(e) {
@@ -3529,6 +3586,7 @@ export default {
             this._freqVsThrottleData =
                 frames.length >= 64 ? _buildFreqVsThrottleData(frames, sampleRate, motorPoles) : null;
 
+            this._saveAnalysisCache();
             this.$nextTick(() => {
                 this.renderGraphs();
             });
@@ -4009,10 +4067,6 @@ export default {
             if (!this.logPidOutput) return;
             const p = this.logPidOutput.new;
             const text = [
-                `Roll:  P=${p.roll.P} I=${p.roll.I} D=${p.roll.D}`,
-                `Pitch: P=${p.pitch.P} I=${p.pitch.I} D=${p.pitch.D}`,
-                `Yaw:   P=${p.yaw.P} I=${p.yaw.I} D=${p.yaw.D}`,
-                "",
                 `set p_roll = ${p.roll.P}`,
                 `set i_roll = ${p.roll.I}`,
                 `set d_roll = ${p.roll.D}`,
@@ -4021,13 +4075,50 @@ export default {
                 `set d_pitch = ${p.pitch.D}`,
                 `set p_yaw = ${p.yaw.P}`,
                 `set i_yaw = ${p.yaw.I}`,
+                `save`,
             ].join("\n");
-            navigator.clipboard.writeText(text).then(() => {
+            const confirm = () => {
                 this.logPidCopyBtnText = "✔ Copied!";
                 setTimeout(() => {
                     this.logPidCopyBtnText = "📋 COPY NEW PIDs";
                 }, 2000);
-            });
+            };
+            if (navigator.clipboard) {
+                navigator.clipboard
+                    .writeText(text)
+                    .then(confirm)
+                    .catch(() => {
+                        // Fallback: textarea + execCommand for restricted contexts
+                        const el = document.createElement("textarea");
+                        el.value = text;
+                        el.style.position = "fixed";
+                        el.style.opacity = "0";
+                        document.body.appendChild(el);
+                        el.select();
+                        try {
+                            document.execCommand("copy");
+                            confirm();
+                        } catch {
+                            /* silent */
+                        }
+                        document.body.removeChild(el);
+                    });
+            } else {
+                // No clipboard API at all — execCommand fallback
+                const el = document.createElement("textarea");
+                el.value = text;
+                el.style.position = "fixed";
+                el.style.opacity = "0";
+                document.body.appendChild(el);
+                el.select();
+                try {
+                    document.execCommand("copy");
+                    confirm();
+                } catch {
+                    /* silent */
+                }
+                document.body.removeChild(el);
+            }
         },
 
         applyChirpPropDefaults(propInch) {

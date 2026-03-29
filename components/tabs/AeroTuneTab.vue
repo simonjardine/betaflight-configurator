@@ -3598,31 +3598,44 @@ export default {
             const frames = this._graphFrames;
             const config = this._graphConfig;
 
-            // Graph 1: Unfiltered Gyros
+            // Graph 1: Unfiltered Gyro — BBE dual-trace approach
+            // Show unfiltered (bright primary) + filtered overlay (dim) so you can see
+            // what the filters removed. If unfiltered data isn't logged, just show filtered.
+            const hasUnfilt = frames.length > 0 && frames[0]["gyroUnfilt[0]"] !== undefined;
+            const gyroColors = ["#e74c3c", "#3498db", "#2ecc71"];
+            const gyroAxes = ["roll", "pitch", "yaw"];
+            const gyroFields = [];
+            for (let i = 0; i < 3; i++) {
+                const col = gyroColors[i];
+                const ax = gyroAxes[i];
+                if (hasUnfilt) {
+                    // Unfiltered — solid, full brightness (what the FC sees before filters)
+                    gyroFields.push({
+                        key: `gyroUnfilt[${i}]`,
+                        color: col,
+                        name: `${ax}-unfilt`,
+                        visible: this.graphToggles.gyro[ax],
+                    });
+                    // Filtered overlay — semi-transparent (what comes out after filters)
+                    gyroFields.push({
+                        key: `gyroADC[${i}]`,
+                        color: col,
+                        name: `${ax}-filt`,
+                        visible: this.graphToggles.gyro[ax],
+                        alpha: 0.38,
+                    });
+                } else {
+                    // Only filtered data available
+                    gyroFields.push({
+                        key: `gyroADC[${i}]`,
+                        color: col,
+                        name: ax,
+                        visible: this.graphToggles.gyro[ax],
+                    });
+                }
+            }
             this._renderTimeSeries(this.$refs.graphGyro, frames, {
-                fields: [
-                    {
-                        key: "gyroUnfilt[0]",
-                        fallback: "gyroADC[0]",
-                        color: "#e74c3c",
-                        name: "roll",
-                        visible: this.graphToggles.gyro.roll,
-                    },
-                    {
-                        key: "gyroUnfilt[1]",
-                        fallback: "gyroADC[1]",
-                        color: "#3498db",
-                        name: "pitch",
-                        visible: this.graphToggles.gyro.pitch,
-                    },
-                    {
-                        key: "gyroUnfilt[2]",
-                        fallback: "gyroADC[2]",
-                        color: "#2ecc71",
-                        name: "yaw",
-                        visible: this.graphToggles.gyro.yaw,
-                    },
-                ],
+                fields: gyroFields,
                 zoom: this.graphZoomLevels.gyro,
                 pan: this.graphPanOffsets.gyro,
                 label: "deg/s",
@@ -3822,8 +3835,11 @@ export default {
             ctx.fillStyle = "hsl(0,0%,4%)";
             ctx.fillRect(0, 0, W, H);
 
-            // Find global max for normalisation (use 95th percentile to avoid outlier washout)
+            // Gain control — slider 10-400 maps to 0.1x–4.0x
             const gainFactor = (this.spectrogramGain || 100) / 100;
+
+            // Adaptive normalisation: 95th-percentile of populated bins avoids outlier washout.
+            // Matches the Blackbox Explorer approach to scaling before colour mapping.
             const allVals = [];
             for (let t = 0; t < 100; t++) {
                 for (let k = 0; k < maxBin; k++) {
@@ -3832,72 +3848,35 @@ export default {
             }
             allVals.sort((a, b) => a - b);
             const p95idx = Math.floor(allVals.length * 0.95);
-            let globalMax = allVals.length > 0 ? (allVals[p95idx] ?? allVals[allVals.length - 1]) : 1;
-            if (globalMax === 0) globalMax = 1;
+            let globalMax = allVals.length > 0 ? allVals[p95idx] || allVals[allVals.length - 1] : 1;
+            if (!globalMax) globalMax = 1;
 
-            // Draw heatmap into an offscreen canvas for blur pass
-            const offscreen = document.createElement("canvas");
-            offscreen.width = plotW;
-            offscreen.height = plotH;
-            const octx = offscreen.getContext("2d");
-            const img = octx.createImageData(plotW, plotH);
-            const data = img.data;
+            // ── Blackbox Explorer heatmap rendering ─────────────────────────
+            // Draw at data resolution (maxBin × 100 throttle bins) using BBE's
+            // exact HSL colormap: hsl(360, 100%, valuePlot%)
+            //   0% lightness = black (quiet), 50% = red (moderate), 100% = white (loud)
+            // Then drawImage scales it up to the plot area — smooth browser scaling.
+            const heatCanvas = document.createElement("canvas");
+            heatCanvas.width = maxBin;
+            heatCanvas.height = 100;
+            const hctx = heatCanvas.getContext("2d", { alpha: false });
 
-            for (let py = 0; py < plotH; py++) {
-                // Bilinear interpolation between throttle bins: py=0 → 100% throttle
-                const thrFrac = (1 - py / plotH) * 99.0;
-                const t0 = Math.floor(thrFrac);
-                const t1 = Math.min(99, t0 + 1);
-                const tf = thrFrac - t0;
-                const row0 = matrix[t0];
-                const row1 = matrix[t1];
-
-                for (let px = 0; px < plotW; px++) {
-                    // Bilinear interpolation between frequency bins
-                    const freqFrac = (px / plotW) * (maxBin - 1);
-                    const f0 = Math.floor(freqFrac);
-                    const f1 = Math.min(maxBin - 1, f0 + 1);
-                    const ff = freqFrac - f0;
-
-                    const mag =
-                        (row0[f0] * (1 - ff) + row0[f1] * ff) * (1 - tf) + (row1[f0] * (1 - ff) + row1[f1] * ff) * tf;
-
-                    const val = Math.min(1, (mag / globalMax) * gainFactor);
-                    // Hot colormap: black → dark red → red → orange → yellow → white
-                    const v4 = val * 4;
-                    let r, g, b;
-                    if (v4 < 1) {
-                        r = Math.floor(v4 * 128);
-                        g = 0;
-                        b = 0;
-                    } else if (v4 < 2) {
-                        r = 128 + Math.floor((v4 - 1) * 127);
-                        g = 0;
-                        b = 0;
-                    } else if (v4 < 3) {
-                        r = 255;
-                        g = Math.floor((v4 - 2) * 200);
-                        b = 0;
-                    } else {
-                        r = 255;
-                        g = 200 + Math.floor((v4 - 3) * 55);
-                        b = Math.floor((v4 - 3) * 255);
-                    }
-                    const idx = (py * plotW + px) * 4;
-                    data[idx] = r;
-                    data[idx + 1] = g;
-                    data[idx + 2] = b;
-                    data[idx + 3] = 255;
+            for (let j = 0; j < 100; j++) {
+                for (let i = 0; i < maxBin; i++) {
+                    const valuePlot = Math.round(Math.min((matrix[j][i] / globalMax) * gainFactor * 100, 100));
+                    hctx.fillStyle = `hsl(360, 100%, ${valuePlot}%)`;
+                    // j=0 is 0% throttle (bottom of graph). Invert so high throttle sits at top.
+                    hctx.fillRect(i, 99 - j, 1, 1);
                 }
             }
-            octx.putImageData(img, 0, 0);
 
-            // Blur pass (like Blackbox Explorer) for smooth appearance
-            octx.filter = "blur(1px)";
-            octx.drawImage(offscreen, 0, 0);
-            octx.filter = "none";
+            // BBE blur pass: 1 px Gaussian smooths sparse FFT bins
+            hctx.filter = "blur(1px)";
+            hctx.drawImage(heatCanvas, 0, 0);
+            hctx.filter = "none";
 
-            ctx.drawImage(offscreen, PAD_L, PAD_T);
+            // Scale the data-resolution heatmap up to the full plot area
+            ctx.drawImage(heatCanvas, 0, 0, maxBin, 100, PAD_L, PAD_T, plotW, plotH);
 
             // Filter overlay lines
             const drawFilterLine = (freqHz, label, color) => {
@@ -4008,27 +3987,10 @@ export default {
             const lctx = legend.getContext("2d");
             const lw = legend.width;
             const lh = legend.height;
+            // BBE HSL colormap: hsl(360, 100%, n%) — black→red→white
             for (let x = 0; x < lw; x++) {
-                const v4 = (x / lw) * 4;
-                let r, g, b;
-                if (v4 < 1) {
-                    r = Math.floor(v4 * 128);
-                    g = 0;
-                    b = 0;
-                } else if (v4 < 2) {
-                    r = 128 + Math.floor((v4 - 1) * 127);
-                    g = 0;
-                    b = 0;
-                } else if (v4 < 3) {
-                    r = 255;
-                    g = Math.floor((v4 - 2) * 200);
-                    b = 0;
-                } else {
-                    r = 255;
-                    g = 200 + Math.floor((v4 - 3) * 55);
-                    b = Math.floor((v4 - 3) * 255);
-                }
-                lctx.fillStyle = `rgb(${r},${g},${b})`;
+                const valuePlot = Math.round((x / lw) * 100);
+                lctx.fillStyle = `hsl(360, 100%, ${valuePlot}%)`;
                 lctx.fillRect(x, 0, 1, lh);
             }
         },

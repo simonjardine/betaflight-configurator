@@ -279,12 +279,23 @@
                             </div>
                         </div>
                     </div>
-                    <div class="gui_box grey" v-if="hasGpsSensor">
+                    <!-- GPS Accuracy Scatter Plot — fully offline, data via USB MSP only.
+                         Auto-shown after 7+ satellites held for 20 continuous seconds. -->
+                    <div class="gui_box grey" v-if="hasGpsSensor && accuracyPlotReady">
                         <div class="gui_box_titlebar">
                             <div class="spacer_box_title" v-html="$t('gpsPanelAccuracyTitle')"></div>
                         </div>
                         <div class="spacer_box gps-accuracy-box">
                             <GpsAccuracyPlot :fixes="accuracyFixes" />
+                        </div>
+                    </div>
+                    <div class="gui_box grey" v-else-if="hasGpsSensor">
+                        <div class="gui_box_titlebar">
+                            <div class="spacer_box_title" v-html="$t('gpsPanelAccuracyTitle')"></div>
+                        </div>
+                        <div class="spacer_box" style="padding: 12px; color: var(--subtleText); font-size: 12px">
+                            Waiting for stable GPS fix — need 7+ satellites for 20 seconds ({{ gpsInfo.sats }}/7
+                            satellites)
                         </div>
                     </div>
                 </div>
@@ -361,6 +372,8 @@ export default defineComponent({
 
         const signalRows = ref([]);
         const accuracyFixes = ref([]); // { lat, lon, t } — accumulated since tab opened
+        const accuracyPlotReady = ref(false); // true after 7+ sats held for 20 continuous seconds
+        let satStableTimer = null;
 
         const gpsProtocols = ref([]);
         const gpsSbas = [
@@ -815,6 +828,10 @@ export default defineComponent({
         const teardown = () => {
             localIntervals.forEach((name) => GUI.interval_remove(name));
             localIntervals.length = 0;
+            if (satStableTimer) {
+                clearTimeout(satStableTimer);
+                satStableTimer = null;
+            }
             document.removeEventListener("fullscreenchange", handleFullscreenChange);
             document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
             document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
@@ -854,6 +871,28 @@ export default defineComponent({
             }
         });
 
+        // Auto-load accuracy scatter plot after 7+ satellites held for 20 continuous seconds.
+        // Works fully offline — no internet required, satellite data comes from the FC via USB.
+        watch(
+            () => gpsInfo.sats,
+            (sats) => {
+                if (sats >= 7) {
+                    if (!satStableTimer && !accuracyPlotReady.value) {
+                        satStableTimer = setTimeout(() => {
+                            accuracyPlotReady.value = true;
+                            satStableTimer = null;
+                        }, 20000);
+                    }
+                } else {
+                    if (satStableTimer) {
+                        clearTimeout(satStableTimer);
+                        satStableTimer = null;
+                    }
+                    // Once achieved, stay visible even if sats drop temporarily
+                }
+            },
+        );
+
         return {
             mapRef,
             mapContainerRef,
@@ -865,6 +904,7 @@ export default defineComponent({
             gpsInfo,
             signalRows,
             accuracyFixes,
+            accuracyPlotReady,
             hasGpsSensor,
             hasMag,
             autoBaudChecked,

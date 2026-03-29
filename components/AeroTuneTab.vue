@@ -464,7 +464,7 @@
                                 </table>
                                 <div class="at-pid-actions">
                                     <button class="at-apply-btn" :disabled="!canApplyLogPids" @click="applyLogPidsToFC">
-                                        ✓ APPLY NEW PIDs TO FC
+                                        {{ logPidApplyBtnText }}
                                     </button>
                                     <button class="at-copy-btn" @click="copyLogPids">{{ logPidCopyBtnText }}</button>
                                 </div>
@@ -3043,6 +3043,7 @@ export default {
             extendedAnalysis: null,
             logPidOutput: null,
             logPidCopyBtnText: "📋 COPY NEW PIDs",
+            logPidApplyBtnText: "✓ APPLY NEW PIDs TO FC",
             sysidResult: null,
             sysidActiveAxis: "roll",
             sysidZoom: "full",
@@ -4044,10 +4045,9 @@ export default {
             this.renderGraphs();
         },
 
-        applyLogPidsToFC() {
+        async applyLogPidsToFC() {
             if (!this.logPidOutput) return;
             const pids = this.logPidOutput.new;
-            const store = usePidTuningStore();
             FC.PIDS[0][0] = pids.roll.P;
             FC.PIDS[0][1] = pids.roll.I;
             FC.PIDS[0][2] = pids.roll.D;
@@ -4057,10 +4057,21 @@ export default {
             FC.PIDS[2][0] = pids.yaw.P;
             FC.PIDS[2][1] = pids.yaw.I;
             FC.PIDS[2][2] = pids.yaw.D;
-            store.needsSave = true;
-            mspHelper.sendPidData(() => {
+            try {
+                await MSP.promise(MSPCodes.MSP_SET_PID, mspHelper.crunch(MSPCodes.MSP_SET_PID));
                 MSP.send_message(MSPCodes.MSP_EEPROM_WRITE);
-            });
+                this.pidTuningStore.markExternalChange();
+                this.logPidApplyBtnText = "PIDs applied ✓";
+                setTimeout(() => {
+                    this.logPidApplyBtnText = "✓ APPLY NEW PIDs TO FC";
+                }, 2500);
+            } catch (err) {
+                console.error("[AeroTune] Failed to apply PIDs:", err);
+                this.logPidApplyBtnText = "Apply failed ✗";
+                setTimeout(() => {
+                    this.logPidApplyBtnText = "✓ APPLY NEW PIDs TO FC";
+                }, 2500);
+            }
         },
 
         copyLogPids() {

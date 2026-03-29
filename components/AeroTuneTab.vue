@@ -290,6 +290,19 @@
 
                             <div class="at-results-box">{{ analysisResult }}</div>
 
+                            <!-- ═══ Mini Spectrogram ═══ -->
+                            <div v-if="spectrogramVisible" class="at-spectrogram-section">
+                                <div class="at-spectrogram-label">GYRO SPECTROGRAM (0–500 Hz)</div>
+                                <div class="at-spectrogram-wrap">
+                                    <canvas ref="spectrogramCanvas" width="600" height="200"></canvas>
+                                    <div class="at-spectrogram-legend">
+                                        <span class="at-sg-quiet">quiet</span>
+                                        <canvas ref="spectrogramLegend" width="80" height="12"></canvas>
+                                        <span class="at-sg-loud">loud</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- ═══ SysID / Chirp frequency-response results ═══ -->
                             <div v-if="sysidResult" class="at-sysid-section">
                                 <div class="at-sysid-banner">
@@ -1217,42 +1230,37 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
     }
 
     const totalFrames = rows.length;
-    const hasRpmFilter = Object.keys(rows[0]).some((k) => /erpm/i.test(k) || /rpm\[/i.test(k));
 
-    // PASS 1: display stats (throttle > 1400 = >40%)
-    const rawValsDisp = [],
-        filtValsDisp = [];
-    let highThrottleCount = 0;
+    // ── RPM FILTER DETECTION ──────────────────────────────────────────────────
+    // Prefer config header; fall back to eRPM field presence in frame data.
+    const rpmHarmonics = config?.rpmFilter?.harmonics ?? 0;
+    const motorPoles = config?.motor?.poles ?? 14;
+    const dshotBidir = config?.motor?.dshotBidir ?? 0;
+    const hasEpmFields = Object.keys(rows[0]).some((k) => /erpm/i.test(k) || /rpm\[/i.test(k));
+    const rpmFilterActive = rpmHarmonics > 0 || (hasEpmFields && dshotBidir === 1);
 
-    // PASS 2: filter score (throttle > 1500 = >50%)
-    const hiRaw = [],
-        hiFilt = [];
-    let hiThrottleFrames = 0;
+    // ── THROTTLE ZONE SPLIT ───────────────────────────────────────────────────
+    // Low 1000-1570: P/D tracking analysis.  High 1570-2000: filter/noise analysis.
+    const lowZoneRows = [];
+    const highZoneRows = [];
+    for (const row of rows) {
+        const thr = Number(row["rcCommand[3]"] ?? 1000);
+        if (thr <= 1570) {
+            lowZoneRows.push(row);
+        } else {
+            highZoneRows.push(row);
+        }
+    }
+    const highZonePct = (highZoneRows.length / totalFrames) * 100;
+    const lowHighThrottleWarning = highZonePct < 5;
 
-    // TRACKING (all frames where setpoint > 50)
-    // Per-frame ratios: mean of abs(gyro)/abs(sp) per frame
+    // ── LOW THROTTLE ZONE: TRACKING ANALYSIS ──────────────────────────────────
+    // Setpoint vs gyro tracking, zero-crossing, P oscillation — scoped to low zone.
     const rollTrackingArr = [],
         pitchTrackingArr = [];
-    const activeGyroRoll = []; // gyroADC[0] when setpoint[0] > 50, used for ZC
+    const activeGyroRoll = [];
 
-    for (const row of rows) {
-        const throttle = Number(row["rcCommand[3]"] ?? 1000);
-
-        // Pass 1: display (>1400)
-        if (throttle > 1400) {
-            highThrottleCount++;
-            rawValsDisp.push(Math.abs(Number(row["gyroUnfilt[0]"] ?? 0)) + Math.abs(Number(row["gyroUnfilt[1]"] ?? 0)));
-            filtValsDisp.push(Math.abs(Number(row["gyroADC[0]"] ?? 0)) + Math.abs(Number(row["gyroADC[1]"] ?? 0)));
-        }
-
-        // Pass 2: filter scoring (>1500)
-        if (throttle > 1500) {
-            hiThrottleFrames++;
-            hiRaw.push(Math.abs(Number(row["gyroUnfilt[0]"] ?? 0)) + Math.abs(Number(row["gyroUnfilt[1]"] ?? 0)));
-            hiFilt.push(Math.abs(Number(row["gyroADC[0]"] ?? 0)) + Math.abs(Number(row["gyroADC[1]"] ?? 0)));
-        }
-
-        // Tracking ratios (all frames, active input only)
+    for (const row of lowZoneRows) {
         const spRoll = Math.abs(Number(row["setpoint[0]"] ?? 0));
         const spPitch = Math.abs(Number(row["setpoint[1]"] ?? 0));
         const gyroRoll = Number(row["gyroADC[0]"] ?? 0);
@@ -1266,37 +1274,15 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     }
 
-    // Display stats (pass 1 - >1400)
-    const avgRaw = rawValsDisp.length > 0 ? rawValsDisp.reduce((a, b) => a + b, 0) / rawValsDisp.length : 0;
-    const avgFiltered = filtValsDisp.length > 0 ? filtValsDisp.reduce((a, b) => a + b, 0) / filtValsDisp.length : 0;
-    const effectiveness = avgRaw > 0 ? clamp(((avgRaw - avgFiltered) / avgRaw) * 100, 0, 100) : 0;
-    const throttlePct = (highThrottleCount / totalFrames) * 100;
-
-    // Insufficient data check (>1500 = >50% throttle)
-    const hiThrottlePct = (hiThrottleFrames / totalFrames) * 100;
-    const insufficientHiThrottle = hiThrottlePct < 5;
-
-    // Filter score (pass 2 - >1500)
-    const avgHiRaw = hiRaw.length > 0 ? hiRaw.reduce((a, b) => a + b, 0) / hiRaw.length : 0;
-    const avgHiFilt = hiFilt.length > 0 ? hiFilt.reduce((a, b) => a + b, 0) / hiFilt.length : 0;
-    const hiFilterEff = avgHiRaw > 0 ? clamp(((avgHiRaw - avgHiFilt) / avgHiRaw) * 100, 0, 100) : 0;
-    const filterSufficient = hiThrottleFrames > 500;
-    const filterScore = filterSufficient ? Math.min(100, hiFilterEff * 2) : 50;
-
-    // Tracking score: mean of per-frame ratios, continuous formula
     const rollTrackingRatio =
         rollTrackingArr.length > 0 ? rollTrackingArr.reduce((a, b) => a + b, 0) / rollTrackingArr.length : null;
     const pitchTrackingRatio =
         pitchTrackingArr.length > 0 ? pitchTrackingArr.reduce((a, b) => a + b, 0) / pitchTrackingArr.length : null;
-    const rollRatio = rollTrackingRatio ?? 1;
-    const pitchRatio = pitchTrackingRatio ?? 1;
-    const avgDeviation = (Math.abs(rollRatio - 1) + Math.abs(pitchRatio - 1)) / 2;
-    const trackingScore = Math.max(0, 100 - avgDeviation * 500);
 
     const rollTracking = { label: trackingLabel(rollTrackingRatio) };
     const pitchTracking = { label: trackingLabel(pitchTrackingRatio) };
 
-    // Zero crossing score: sign changes in gyroADC[0] during active roll input
+    // Zero crossing rate in low zone
     let zeroCrossings = 0;
     for (let j = 1; j < activeGyroRoll.length; j++) {
         if (activeGyroRoll[j - 1] >= 0 !== activeGyroRoll[j] >= 0) {
@@ -1304,7 +1290,6 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     }
     const zeroCrossingRate = activeGyroRoll.length > 0 ? (zeroCrossings / activeGyroRoll.length) * 100 : 0;
-    const zcScore = Math.max(0, 100 - zeroCrossingRate * 10);
     let zcLabel;
     if (zeroCrossingRate < 1) {
         zcLabel = "EXCELLENT";
@@ -1316,16 +1301,16 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         zcLabel = "POOR";
     }
 
-    // Propwash detection (kept for D gain notes only, not in weighted score)
+    // Propwash detection in low zone
     let propwashDetected = false;
-    for (let i = 1; i < rows.length && !propwashDetected; i++) {
-        const tPrev = Number(rows[i - 1]["rcCommand[3]"] ?? 1000);
-        const tCurr = Number(rows[i]["rcCommand[3]"] ?? 1000);
+    for (let i = 1; i < lowZoneRows.length && !propwashDetected; i++) {
+        const tPrev = Number(lowZoneRows[i - 1]["rcCommand[3]"] ?? 1000);
+        const tCurr = Number(lowZoneRows[i]["rcCommand[3]"] ?? 1000);
         if (tPrev - tCurr > 200) {
             let osc = 0;
-            for (let j = 1; j <= 30 && i + j < rows.length; j++) {
-                const g1 = Number(rows[i + j - 1]["gyroADC[0]"] ?? 0);
-                const g2 = Number(rows[i + j]["gyroADC[0]"] ?? 0);
+            for (let j = 1; j <= 30 && i + j < lowZoneRows.length; j++) {
+                const g1 = Number(lowZoneRows[i + j - 1]["gyroADC[0]"] ?? 0);
+                const g2 = Number(lowZoneRows[i + j]["gyroADC[0]"] ?? 0);
                 if (g1 * g2 < 0) {
                     osc++;
                 }
@@ -1336,62 +1321,141 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     }
 
-    // Weighted overall score (matches Python V5.6 formula exactly)
-    const overallScore = trackingScore * 0.7 + filterScore * 0.15 + zcScore * 0.1 + 5;
+    // ── HIGH THROTTLE ZONE: NOISE / FILTER ANALYSIS ───────────────────────────
 
-    let overallLabel;
-    if (overallScore >= 85) {
-        overallLabel = "EXCELLENT ✅";
-    } else if (overallScore >= 70) {
-        overallLabel = "GOOD ✅";
-    } else if (overallScore >= 55) {
-        overallLabel = "FAIR ⚠️";
-    } else if (overallScore >= 40) {
-        overallLabel = "WEAK ⚠️";
-    } else {
-        overallLabel = "VERY WEAK 🔴";
-    }
-    if (insufficientHiThrottle && overallScore >= 70) {
-        overallLabel += " (unconfirmed — insufficient hi-throttle data)";
+    // Estimate sample rate from config looptime or assume 3.2kHz
+    const looptimeUs = config?.misc?.looptime ?? 312;
+    const sampleRate = 1e6 / looptimeUs;
+
+    // FFT noise peak detection on gyroADC in high throttle zone
+    const fftNoisePeaks = [];
+    let spectrogramData = null;
+    if (highZoneRows.length >= 64) {
+        // Collect gyroADC[0] (roll axis — representative) for high-throttle FFT
+        const gyroSignal = highZoneRows.map((r) => Number(r["gyroADC[0]"] ?? 0));
+        const fftSize = _nextPow2(Math.min(gyroSignal.length, 4096));
+        const hann = _hannWindow(fftSize);
+        const re = new Float64Array(fftSize);
+        const im = new Float64Array(fftSize);
+        for (let i = 0; i < fftSize; i++) {
+            re[i] = (gyroSignal[i] ?? 0) * hann[i];
+            im[i] = 0;
+        }
+        fftInPlace(re, im);
+
+        // Compute magnitude spectrum (only positive frequencies)
+        const halfN = fftSize >> 1;
+        const freqBinHz = sampleRate / fftSize;
+        const mag = new Float64Array(halfN);
+        for (let k = 0; k < halfN; k++) {
+            mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]) / fftSize;
+        }
+
+        // Find top 3 peaks above 80Hz
+        const minBin = Math.ceil(80 / freqBinHz);
+        const maxBin = Math.min(halfN, Math.floor(500 / freqBinHz));
+        const peakCandidates = [];
+        for (let k = minBin + 1; k < maxBin - 1; k++) {
+            if (mag[k] > mag[k - 1] && mag[k] > mag[k + 1]) {
+                peakCandidates.push({ freq: k * freqBinHz, amplitude: mag[k], bin: k });
+            }
+        }
+        peakCandidates.sort((a, b) => b.amplitude - a.amplitude);
+        const maxAmp = peakCandidates.length > 0 ? peakCandidates[0].amplitude : 1;
+
+        // Dynamic notch range
+        const dynNotchMin = config?.dynamicNotch?.minHz ?? 100;
+        const dynNotchMax = config?.dynamicNotch?.maxHz ?? 600;
+        const dynNotchCount = config?.dynamicNotch?.count ?? 0;
+
+        for (let p = 0; p < Math.min(3, peakCandidates.length); p++) {
+            const pk = peakCandidates[p];
+            const relAmp = ((pk.amplitude / maxAmp) * 100).toFixed(0);
+            // Check coverage: RPM filter covers motor harmonics, dynamic notch covers its range
+            let coverage = "UNCOVERED";
+            let coverageIcon = "⚠️";
+            if (rpmFilterActive) {
+                // RPM filter covers motor fundamental and harmonics — check if peak is near one
+                const motorFreqs = _estimateMotorFreqs(highZoneRows, motorPoles);
+                if (motorFreqs.fundamental > 0) {
+                    for (let h = 1; h <= rpmHarmonics; h++) {
+                        if (Math.abs(pk.freq - motorFreqs.fundamental * h) < motorFreqs.fundamental * 0.15) {
+                            coverage = "RPM filter";
+                            coverageIcon = "✅";
+                            break;
+                        }
+                    }
+                }
+            }
+            if (coverage === "UNCOVERED" && dynNotchCount > 0 && pk.freq >= dynNotchMin && pk.freq <= dynNotchMax) {
+                coverage = "dynamic notch tracking";
+                coverageIcon = "✅";
+            }
+            fftNoisePeaks.push({
+                freq: Math.round(pk.freq),
+                relAmplitude: relAmp,
+                coverage,
+                coverageIcon,
+            });
+        }
+
+        // ── MINI SPECTROGRAM DATA ─────────────────────────────────────────────
+        // Build spectrogram from ALL frames (not just high throttle) for full-flight view
+        spectrogramData = _buildSpectrogramData(rows, sampleRate);
     }
 
-    // Vibration level: score >= 70 overrides to ADEQUATE, else from avg_raw (>1400)
-    let vibLevel;
-    if (overallScore >= 70) {
-        vibLevel = "ADEQUATE ✓";
-    } else if (avgRaw < 15) {
-        vibLevel = "CLEAN ✓";
-    } else if (avgRaw < 20) {
-        vibLevel = "GOOD ✓";
-    } else if (avgRaw < 30) {
-        vibLevel = "FAIR";
-    } else if (avgRaw < 50) {
-        vibLevel = "WEAK ⚠";
-    } else {
-        vibLevel = "VERY WEAK 🔴";
+    // ── RPM HARMONIC ALIGNMENT ────────────────────────────────────────────────
+    let rpmAlignment = null;
+    if (rpmFilterActive && highZoneRows.length >= 64) {
+        const motorFreqs = _estimateMotorFreqs(highZoneRows, motorPoles);
+        if (motorFreqs.fundamental > 0) {
+            const alignResults = [];
+            for (let h = 1; h <= 3; h++) {
+                const harmFreq = motorFreqs.fundamental * h;
+                if (harmFreq > 500) break;
+                // Check if this harmonic shows up as an uncovered peak
+                const leaked = fftNoisePeaks.some(
+                    (pk) => Math.abs(pk.freq - harmFreq) < motorFreqs.fundamental * 0.15 && pk.coverage === "UNCOVERED",
+                );
+                alignResults.push({
+                    harmonic: h,
+                    freq: Math.round(harmFreq),
+                    aligned: !leaked,
+                });
+            }
+            rpmAlignment = {
+                fundamental: Math.round(motorFreqs.fundamental),
+                harmonics: alignResults,
+            };
+        }
     }
 
-    // Filter action text
-    let filterAction;
-    if (overallScore >= 70) {
-        filterAction = "Filters are adequate for this tune. No changes recommended.";
-    } else if (avgRaw < 20) {
-        filterAction = "Gyro Lowpass 2: Keep current setting.\nD-term Lowpass: Slightly increase (less aggressive).";
-    } else if (avgRaw < 30) {
-        filterAction = "Gyro Lowpass 2: Lower by ~30 Hz.\nD-term Lowpass: Lower by ~20 Hz.\nTest and re-analyze.";
-    } else if (avgRaw < 50) {
-        filterAction =
-            "Gyro Lowpass 2: Lower by ~50 Hz.\nD-term Lowpass: Lower by ~30 Hz.\nConsider enabling Notch filter.";
-    } else {
-        filterAction =
-            "Gyro Lowpass 2: Lower aggressively (~100 Hz reduction).\nD-term: Lower significantly.\nEnable all available filters.\nCheck for mechanical issues.";
+    // ── D-TERM NOISE ASSESSMENT ───────────────────────────────────────────────
+    let dTermNoise = { lowZone: "N/A", highZone: "N/A", lowRms: 0, highRms: 0 };
+    const dTermLowVals = [];
+    const dTermHighVals = [];
+    for (const row of lowZoneRows) {
+        const d0 = Number(row["axisD[0]"] ?? 0);
+        const d1 = Number(row["axisD[1]"] ?? 0);
+        dTermLowVals.push(d0 * d0 + d1 * d1);
     }
-    filterAction += "\nFresh props recommended before tuning — damaged props create false noise in logs.";
-    filterAction += hasRpmFilter
-        ? "\nRPM filter detected (eRPM data present) — it is active and helping suppress motor harmonics."
-        : "\nEnable RPM filter — most effective filter available, requires bidirectional DSHOT.";
+    for (const row of highZoneRows) {
+        const d0 = Number(row["axisD[0]"] ?? 0);
+        const d1 = Number(row["axisD[1]"] ?? 0);
+        dTermHighVals.push(d0 * d0 + d1 * d1);
+    }
+    const lowDRms =
+        dTermLowVals.length > 0 ? Math.sqrt(dTermLowVals.reduce((a, b) => a + b, 0) / dTermLowVals.length) : 0;
+    const highDRms =
+        dTermHighVals.length > 0 ? Math.sqrt(dTermHighVals.reduce((a, b) => a + b, 0) / dTermHighVals.length) : 0;
+    dTermNoise = {
+        lowZone: _dTermNoiseLabel(lowDRms),
+        highZone: _dTermNoiseLabel(highDRms),
+        lowRms: lowDRms.toFixed(1),
+        highRms: highDRms.toFixed(1),
+    };
 
-    // ── P GAIN ANALYSIS ───────────────────────────────────────────────────────
+    // ── P GAIN ANALYSIS (scoped to low throttle zone) ─────────────────────────
     const ANGLE_MODE_FLAG = 2;
     let levelModeFrames = 0;
     for (const row of rows) {
@@ -1401,8 +1465,8 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
     }
     const isLevelMode = rows.length > 0 && levelModeFrames / rows.length > 0.5;
 
-    const rollPData = analyzePGain(rows, 0, isLevelMode);
-    const pitchPData = analyzePGain(rows, 1, isLevelMode);
+    const rollPData = analyzePGain(lowZoneRows, 0, isLevelMode);
+    const pitchPData = analyzePGain(lowZoneRows, 1, isLevelMode);
 
     const allOvershoots = [...rollPData.overshootPcts, ...pitchPData.overshootPcts];
     const allLags = [...rollPData.lagFrames, ...pitchPData.lagFrames];
@@ -1453,10 +1517,10 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     }
 
-    // ── D GAIN ANALYSIS ───────────────────────────────────────────────────────
-    const rollDData = analyzeDGain(rows, 0);
-    const pitchDData = analyzeDGain(rows, 1);
-    const avgCrossings = (rollDData.avgCrossings + pitchDData.avgCrossings) / 2;
+    // ── D GAIN ANALYSIS (scoped to low throttle zone) ─────────────────────────
+    const rollDData = analyzeDGain(lowZoneRows, 0);
+    const pitchDData = analyzeDGain(lowZoneRows, 1);
+    const avgDCrossings = (rollDData.avgCrossings + pitchDData.avgCrossings) / 2;
     const avgDtoP = (rollDData.avgDtoP + pitchDData.avgDtoP) / 2;
     const filterNoiseDOsc = rollDData.filterNoiseDOsc || pitchDData.filterNoiseDOsc;
     const hasSteps = rollDData.stepCount > 0 || pitchDData.stepCount > 0;
@@ -1469,9 +1533,9 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         dVerdict = "FILTER NOISE LIMITING D ⚠";
         dAction =
             "Unfiltered gyro is much noisier than filtered at high throttle, and D is still active.\nFix filters before increasing D — see FILTERS section.";
-    } else if (avgCrossings > 3) {
+    } else if (avgDCrossings > 3) {
         dVerdict = "D TOO LOW ⚠";
-        dAction = `Average zero-crossings after peak: ${avgCrossings.toFixed(1)}.\nD too low — increase by 3–5. Symptom: propwash oscillations after throttle cuts.`;
+        dAction = `Average zero-crossings after peak: ${avgDCrossings.toFixed(1)}.\nD too low — increase by 3–5. Symptom: propwash oscillations after throttle cuts.`;
     } else if (avgDtoP > 1.5 && motorTemp === "HOT") {
         dVerdict = "D TOO HIGH ⚠";
         dAction = `D/P ratio is ${avgDtoP.toFixed(2)} and motors are running HOT.\nD too high — reduce by 3–5. Check motor temps after flying.`;
@@ -1485,7 +1549,7 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     } else {
         dVerdict = "D GAINS LOOK GOOD ✓";
-        dAction = `Average zero-crossings: ${avgCrossings.toFixed(1)}, D/P ratio: ${avgDtoP.toFixed(2)}. D gains look good.`;
+        dAction = `Average zero-crossings: ${avgDCrossings.toFixed(1)}, D/P ratio: ${avgDtoP.toFixed(2)}. D gains look good.`;
     }
 
     if (motorTemp === "HOT" && dVerdict === "D GAINS LOOK GOOD ✓") {
@@ -1497,20 +1561,7 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         dAction += "\nPropwash detected — increase D by 3–5 or check filtering.";
     }
 
-    // ── POST-PROCESS FILTER DISPLAY FOR GOOD/EXCELLENT OVERALL ───────────────
-    if (overallScore >= 70 && filterSufficient) {
-        const rpmLine = hasRpmFilter
-            ? "RPM filter detected (eRPM data present) — it is active and helping suppress motor harmonics."
-            : "Enable RPM filter — most effective filter available, requires bidirectional DSHOT.";
-        filterAction = `Filters are adequate for this tune. No changes recommended.\nFresh props recommended before tuning — damaged props create false noise in logs.\n${rpmLine}`;
-        if (vibLevel === "VERY WEAK 🔴") {
-            vibLevel = "ADEQUATE ✓";
-        }
-    }
-
     // ── D_MAX FLIGHT 2 REFINEMENT ─────────────────────────────────────────────
-    // Detect when D_Max is at Betaflight defaults and overshoot is moderate —
-    // the D-term ceiling may be too permissive, causing unnecessary D amplification.
     const avgOvershootAll =
         allOvershoots.length > 0 ? allOvershoots.reduce((a, b) => a + b, 0) / allOvershoots.length : null;
 
@@ -1519,7 +1570,6 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         const dMaxRoll = config.pids?.roll?.[3] ?? null;
         const dMaxPitch = config.pids?.pitch?.[3] ?? null;
         const dMaxAdvance = config.pids?.dMaxAdvance ?? null;
-        // BF 4.x defaults: d_max roll=40, pitch=46, d_max_advance=20
         if (dMaxRoll !== null && dMaxPitch !== null && Math.abs(dMaxRoll - 40) <= 3 && Math.abs(dMaxPitch - 46) <= 3) {
             dMaxRefinement = {
                 dMaxRoll,
@@ -1533,29 +1583,56 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         }
     }
 
+    // ── FILTER SUGGESTIONS (only when genuinely wrong) ────────────────────────
+    const filterSuggestions = [];
+    if (!rpmFilterActive) {
+        filterSuggestions.push("Enable RPM filter — most effective filter available, requires bidirectional DShot.");
+    }
+    // Only suggest LP1/LP2 changes when RPM filter is NOT active
+    if (!rpmFilterActive) {
+        const lpf2Hz = config?.gyroFilters?.lowpass2Hz;
+        if (highDRms > 40 && lpf2Hz !== null && lpf2Hz !== undefined && lpf2Hz > 0 && lpf2Hz < 500) {
+            const reduction = highDRms > 80 ? 100 : highDRms > 60 ? 50 : 30;
+            const suggested = Math.max(80, lpf2Hz - reduction);
+            filterSuggestions.push(`set gyro_lpf2_static_hz = ${suggested}  # was ${lpf2Hz}`);
+        }
+    }
+    // Dynamic notch range suggestions (valid with or without RPM filter)
+    for (const pk of fftNoisePeaks) {
+        if (pk.coverage === "UNCOVERED") {
+            const dynMin = config?.dynamicNotch?.minHz ?? 100;
+            const dynMax = config?.dynamicNotch?.maxHz ?? 600;
+            if (pk.freq < dynMin) {
+                filterSuggestions.push(
+                    `set dyn_notch_min_hz = ${Math.max(50, pk.freq - 20)}  # was ${dynMin} — uncovered peak at ${pk.freq}Hz`,
+                );
+            } else if (pk.freq > dynMax) {
+                filterSuggestions.push(
+                    `set dyn_notch_max_hz = ${pk.freq + 30}  # was ${dynMax} — uncovered peak at ${pk.freq}Hz`,
+                );
+            }
+            break; // Only suggest for the strongest uncovered peak
+        }
+    }
+
     return {
         totalFrames,
-        highThrottleCount,
-        throttlePct: throttlePct.toFixed(1),
-        hiThrottleFrames,
-        hiThrottlePct: hiThrottlePct.toFixed(1),
-        insufficientHiThrottle,
-        avgRaw: avgRaw.toFixed(2),
-        avgFiltered: avgFiltered.toFixed(2),
-        effectiveness: effectiveness.toFixed(1),
-        filterSufficient,
-        vibLevel,
-        filterAction,
+        lowZoneFrames: lowZoneRows.length,
+        highZoneFrames: highZoneRows.length,
+        highZonePct: highZonePct.toFixed(1),
+        lowHighThrottleWarning,
+        rpmFilterActive,
+        rpmHarmonics,
         rollTrackingRatio,
         pitchTrackingRatio,
         rollTracking,
         pitchTracking,
-        trackingScore: trackingScore.toFixed(1),
         zeroCrossingRate: zeroCrossingRate.toFixed(2),
         zcLabel,
         propwashDetected,
-        overallScore: overallScore.toFixed(1),
-        overallLabel,
+        fftNoisePeaks,
+        rpmAlignment,
+        dTermNoise,
         pVerdict,
         pAction,
         dVerdict,
@@ -1563,6 +1640,75 @@ function analyzeLog(rows, motorTemp = "WARM", config = null) {
         motorTemp,
         config,
         dMaxRefinement,
+        filterSuggestions,
+        spectrogramData,
+    };
+}
+
+// ── Helper: estimate motor fundamental frequency from eRPM fields ─────────
+function _estimateMotorFreqs(highZoneRows, motorPoles) {
+    const erpmKeys = Object.keys(highZoneRows[0] || {}).filter((k) => /erpm/i.test(k) || /motor\[/i.test(k));
+    if (erpmKeys.length === 0) return { fundamental: 0 };
+
+    let erpmSum = 0,
+        erpmCount = 0;
+    for (const row of highZoneRows) {
+        for (const key of erpmKeys) {
+            const val = Math.abs(Number(row[key] ?? 0));
+            if (val > 100) {
+                erpmSum += val;
+                erpmCount++;
+            }
+        }
+    }
+    if (erpmCount === 0) return { fundamental: 0 };
+    const avgErpm = erpmSum / erpmCount;
+    // fundamental = eRPM / 60 / (motor_poles / 2)
+    const polePairs = Math.max(1, motorPoles / 2);
+    const fundamental = avgErpm / 60 / polePairs;
+    return { fundamental };
+}
+
+// ── Helper: D-term noise label from RMS value ─────────────────────────────
+function _dTermNoiseLabel(rms) {
+    if (rms < 15) return "LOW";
+    if (rms < 40) return "MODERATE";
+    return "HIGH";
+}
+
+// ── Helper: build spectrogram data for canvas rendering ───────────────────
+function _buildSpectrogramData(rows, sampleRate) {
+    const signal = rows.map((r) => Number(r["gyroADC[0]"] ?? 0));
+    const windowSize = 256;
+    const hopSize = 128;
+    const maxFreqHz = 500;
+    const hann = _hannWindow(windowSize);
+    const fftN = _nextPow2(windowSize);
+    const halfN = fftN >> 1;
+    const freqBinHz = sampleRate / fftN;
+    const maxBin = Math.min(halfN, Math.ceil(maxFreqHz / freqBinHz));
+
+    const slices = [];
+    for (let start = 0; start + windowSize <= signal.length; start += hopSize) {
+        const re = new Float64Array(fftN);
+        const im = new Float64Array(fftN);
+        for (let i = 0; i < windowSize; i++) {
+            re[i] = signal[start + i] * hann[i];
+        }
+        fftInPlace(re, im);
+        const slice = new Float64Array(maxBin);
+        for (let k = 0; k < maxBin; k++) {
+            slice[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]) / fftN;
+        }
+        slices.push(slice);
+    }
+
+    return {
+        slices,
+        freqBinHz,
+        maxBin,
+        maxFreqHz,
+        sampleRate,
     };
 }
 
@@ -1573,49 +1719,90 @@ function formatAnalysisResult(r) {
     const SEP = "════════════════════════════════════════════════════";
     const lines = [];
 
-    if (r.insufficientHiThrottle) {
-        lines.push(
-            `⚠️ INSUFFICIENT HIGH-THROTTLE DATA — Only ${r.hiThrottlePct}% of this flight was above 50% throttle.`,
-            `Results may not be reliable. For accurate filter analysis, fly a pack with sustained throttle inputs above 50% stick.`,
-            ``,
-        );
-    }
-
-    const rRatio = r.rollTrackingRatio !== null ? r.rollTrackingRatio.toFixed(3) : "N/A";
-    const pRatio = r.pitchTrackingRatio !== null ? r.pitchTrackingRatio.toFixed(3) : "N/A";
-    const effDisplay = r.filterSufficient ? `${r.effectiveness}%` : "N/A";
+    // ── Frame counts & throttle zone split ────────────────────────────────────
     lines.push(
-        `Frames analysed : ${r.totalFrames}  |  Hi-throttle (>50%): ${r.hiThrottleFrames} (${r.hiThrottlePct}%)`,
-        ``,
-        SEP,
-        `  OVERALL RATING : ${r.overallLabel}  (score: ${r.overallScore}/100)`,
-        SEP,
-        ``,
-        SEP,
-        `  SETPOINT TRACKING`,
-        SEP,
-        `Roll:  ${rRatio} (target: 1.000) — ${r.rollTracking.label}`,
-        `Pitch: ${pRatio} (target: 1.000) — ${r.pitchTracking.label}`,
-        `Zero-crossing rate (P oscillation): ${r.zeroCrossingRate}% — ${r.zcLabel}`,
+        `Frames analysed : ${r.totalFrames}`,
+        `Low throttle zone  (≤1570): ${r.lowZoneFrames} frames`,
+        `High throttle zone (>1570): ${r.highZoneFrames} frames (${r.highZonePct}%)`,
         ``,
     );
-    lines.push(SEP, `  FILTERS : ${r.vibLevel}  |  Effectiveness: ${effDisplay}`, SEP);
-    if (r.filterSufficient) {
-        lines.push(`Avg raw gyro (hi-thr): ${r.avgRaw}  |  Avg filtered: ${r.avgFiltered}`);
-    }
-    lines.push(r.filterAction, ``);
 
-    lines.push(SEP, `  ROLL/PITCH P : ${r.pVerdict}`, SEP);
-    if (Number.parseFloat(r.overallScore) >= 70) {
-        lines.push(`P tracking well — no changes recommended.`, ``);
-    } else {
+    if (r.lowHighThrottleWarning) {
         lines.push(
-            r.pAction,
-            `Tip: level mode and acro mode are both valid for tuning. Level mode gives clean repeatable step inputs.`,
+            `⚠️ Limited high-throttle data (${r.highZonePct}%) — fly with sustained throttle punches for accurate noise analysis`,
             ``,
         );
     }
 
+    // ── RPM FILTER STATUS ─────────────────────────────────────────────────────
+    lines.push(SEP, `  RPM FILTER STATUS`, SEP);
+    if (r.rpmFilterActive) {
+        lines.push(`RPM filter active (${r.rpmHarmonics} harmonics) — gyro lowpass filters not required ✅`);
+    } else {
+        lines.push(`RPM filter not detected — enable RPM filter + bidirectional DShot for best noise rejection`);
+    }
+    lines.push(``);
+
+    // ── LOW THROTTLE ZONE: TRACKING QUALITY ───────────────────────────────────
+    const rRatio = r.rollTrackingRatio !== null ? r.rollTrackingRatio.toFixed(3) : "N/A";
+    const pRatio = r.pitchTrackingRatio !== null ? r.pitchTrackingRatio.toFixed(3) : "N/A";
+    lines.push(
+        SEP,
+        `  LOW THROTTLE ZONE — TRACKING QUALITY`,
+        SEP,
+        `Roll tracking:  ${rRatio} (target: 1.000) — ${r.rollTracking.label}`,
+        `Pitch tracking: ${pRatio} (target: 1.000) — ${r.pitchTracking.label}`,
+        `Zero-crossing rate (P oscillation): ${r.zeroCrossingRate}% — ${r.zcLabel}`,
+    );
+    if (r.propwashDetected) {
+        lines.push(`Propwash oscillation detected in throttle cuts`);
+    }
+    lines.push(``);
+
+    // ── HIGH THROTTLE ZONE: NOISE QUALITY ─────────────────────────────────────
+    lines.push(SEP, `  HIGH THROTTLE ZONE — NOISE QUALITY`, SEP);
+
+    // FFT Noise peaks
+    if (r.fftNoisePeaks.length > 0) {
+        lines.push(`Top noise peaks (gyro FFT, >80Hz):`);
+        for (const pk of r.fftNoisePeaks) {
+            lines.push(`  Peak at ${pk.freq}Hz (${pk.relAmplitude}% rel) — ${pk.coverage} ${pk.coverageIcon}`);
+        }
+    } else if (r.highZoneFrames < 64) {
+        lines.push(`Insufficient high-throttle data for FFT analysis`);
+    } else {
+        lines.push(`No significant noise peaks detected above 80Hz ✅`);
+    }
+    lines.push(``);
+
+    // RPM harmonic alignment
+    if (r.rpmAlignment) {
+        lines.push(`Motor fundamental at ~${r.rpmAlignment.fundamental}Hz`);
+        for (const h of r.rpmAlignment.harmonics) {
+            if (h.aligned) {
+                lines.push(`  ${h.harmonic}x harmonic (${h.freq}Hz) — RPM filter aligned ✅`);
+            } else {
+                lines.push(`  ${h.harmonic}x harmonic (${h.freq}Hz) — possible gap in RPM coverage ⚠️`);
+            }
+        }
+        lines.push(``);
+    }
+
+    // D-term noise
+    lines.push(
+        `D-term noise: low zone ${r.dTermNoise.lowZone} (RMS ${r.dTermNoise.lowRms}) | high zone ${r.dTermNoise.highZone} (RMS ${r.dTermNoise.highRms})`,
+        ``,
+    );
+
+    // ── P GAIN ────────────────────────────────────────────────────────────────
+    lines.push(SEP, `  ROLL/PITCH P : ${r.pVerdict}`, SEP);
+    lines.push(
+        r.pAction,
+        `Tip: level mode and acro mode are both valid for tuning. Level mode gives clean repeatable step inputs.`,
+        ``,
+    );
+
+    // ── D GAIN ────────────────────────────────────────────────────────────────
     lines.push(SEP, `  ROLL/PITCH D : ${r.dVerdict}`, SEP, r.dAction);
 
     // ── Flight 2 refinement — D_Max headroom ──────────────────────────────────
@@ -1637,51 +1824,16 @@ function formatAnalysisResult(r) {
         );
     }
 
-    // ── Suggested CLI commands (populated from BBL header values) ─────────────
-    if (r.config) {
-        const cfg = r.config;
-        const cliLines = [];
-        const needsFilterWork = r.vibLevel === "WEAK ⚠" || r.vibLevel === "FAIR" || r.vibLevel === "VERY WEAK 🔴";
-
-        if (needsFilterWork) {
-            // Gyro LPF2 — only suggest when it is active (0 = disabled, ≥500 = effectively off)
-            const lpf2Hz = cfg.gyroFilters?.lowpass2Hz;
-            if (lpf2Hz !== null && lpf2Hz !== undefined && lpf2Hz > 0 && lpf2Hz < 500) {
-                let reduction = 0;
-                if (r.vibLevel === "VERY WEAK 🔴") {
-                    reduction = 100;
-                } else if (r.vibLevel === "WEAK ⚠") {
-                    reduction = 50;
-                } else if (r.vibLevel === "FAIR") {
-                    reduction = 30;
-                }
-                if (reduction > 0) {
-                    const suggested = Math.max(80, lpf2Hz - reduction);
-                    cliLines.push(`  set gyro_lpf2_static_hz = ${suggested}  # was ${lpf2Hz}`);
-                }
-            }
-
-            // Dynamic notch max Hz — only when notch is active (count > 0)
-            const dynCount = cfg.dynamicNotch?.count;
-            const dynMaxHz = cfg.dynamicNotch?.maxHz;
-            const dynMinHz = cfg.dynamicNotch?.minHz;
-            if (
-                dynCount !== null &&
-                dynCount !== undefined &&
-                dynCount > 0 &&
-                dynMaxHz !== null &&
-                dynMaxHz !== undefined &&
-                dynMaxHz > 0
-            ) {
-                const suggestedMax = Math.max((dynMinHz ?? 100) + 100, dynMaxHz - 100);
-                cliLines.push(`  set dyn_notch_max_hz = ${suggestedMax}  # was ${dynMaxHz}`);
-            }
+    // ── SUGGESTED CHANGES (only when something is genuinely wrong) ────────────
+    if (r.filterSuggestions && r.filterSuggestions.length > 0) {
+        lines.push(``, SEP, `  SUGGESTED CHANGES`, SEP);
+        for (const s of r.filterSuggestions) {
+            lines.push(`  ${s}`);
         }
-
-        if (cliLines.length > 0) {
-            lines.push(``, SEP, `  SUGGESTED CLI COMMANDS`, SEP, ...cliLines, ``);
-        }
+        lines.push(``);
     }
+
+    lines.push(``, `Fresh props recommended before tuning — damaged props create false noise in logs.`);
 
     return lines.join("\n");
 }
@@ -2134,8 +2286,8 @@ function runSysID(frames, config, propInches) {
                 ci + 1 < cohRaw.length
                     ? cohRaw[ci] * (1 - cf) + cohRaw[ci + 1] * cf
                     : ci < cohRaw.length
-                        ? cohRaw[ci]
-                        : 0;
+                      ? cohRaw[ci]
+                      : 0;
             filtCoh.push(Math.min(1, Math.max(0, c)));
         }
 
@@ -2334,6 +2486,7 @@ export default {
             bblSessions: [],
             bblSelectedSession: 0,
             bblBuffer: null,
+            spectrogramVisible: false,
             sysidResult: null,
             sysidActiveAxis: "roll",
             sysidZoom: "full",
@@ -2730,7 +2883,9 @@ export default {
             }
 
             const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1}: ` : "";
-            this.analysisResult = prefix + formatAnalysisResult(analyzeLog(frames, this.motorTemp, config));
+            const result = analyzeLog(frames, this.motorTemp, config);
+            this.analysisResult = prefix + formatAnalysisResult(result);
+            this._showSpectrogram(result.spectrogramData);
         },
 
         /** Called by the session dropdown — re-analyzes the selected session. */
@@ -2800,10 +2955,134 @@ export default {
                             "ERROR: Could not find a valid Betaflight blackbox header.\nMake sure you exported a CSV from Blackbox Explorer (not the raw .BFL/.BBL file).";
                         return;
                     }
-                    this.analysisResult = formatAnalysisResult(analyzeLog(rows, motorTemp));
+                    const csvResult = analyzeLog(rows, motorTemp);
+                    this.analysisResult = formatAnalysisResult(csvResult);
+                    this._showSpectrogram(csvResult.spectrogramData);
                 }
             } catch (err) {
                 this.analysisResult = `ERROR: Failed to read file: ${err.message}`;
+            }
+        },
+
+        _showSpectrogram(spectrogramData) {
+            if (!spectrogramData || !spectrogramData.slices || spectrogramData.slices.length === 0) {
+                this.spectrogramVisible = false;
+                return;
+            }
+            this.spectrogramVisible = true;
+            // Wait for the canvas ref to be in the DOM
+            this.$nextTick(() => {
+                this._renderSpectrogram(spectrogramData);
+            });
+        },
+
+        _renderSpectrogram(data) {
+            const canvas = this.$refs.spectrogramCanvas;
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            const W = canvas.width;
+            const H = canvas.height;
+            const { slices, maxBin, maxFreqHz } = data;
+            const numSlices = slices.length;
+
+            // Find global max amplitude for normalisation
+            let globalMax = 0;
+            for (const slice of slices) {
+                for (let k = 0; k < maxBin; k++) {
+                    if (slice[k] > globalMax) globalMax = slice[k];
+                }
+            }
+            if (globalMax === 0) globalMax = 1;
+
+            const img = ctx.createImageData(W, H);
+            const sliceStep = numSlices / W;
+            const binStep = maxBin / H;
+
+            for (let x = 0; x < W; x++) {
+                const si = Math.min(Math.floor(x * sliceStep), numSlices - 1);
+                const slice = slices[si];
+                for (let y = 0; y < H; y++) {
+                    // Y=0 is top = high frequency, Y=H-1 is bottom = 0Hz
+                    const bin = Math.min(Math.floor((H - 1 - y) * binStep), maxBin - 1);
+                    const val = Math.min(1, slice[bin] / globalMax);
+                    // Colormap: black → blue → cyan → yellow → white
+                    const idx = (y * W + x) * 4;
+                    const v4 = val * 4;
+                    let r, g, b;
+                    if (v4 < 1) {
+                        r = 0;
+                        g = 0;
+                        b = Math.floor(v4 * 180);
+                    } else if (v4 < 2) {
+                        r = 0;
+                        g = Math.floor((v4 - 1) * 255);
+                        b = 180;
+                    } else if (v4 < 3) {
+                        r = Math.floor((v4 - 2) * 255);
+                        g = 255;
+                        b = 180 - Math.floor((v4 - 2) * 180);
+                    } else {
+                        r = 255;
+                        g = 255;
+                        b = Math.floor((v4 - 3) * 255);
+                    }
+                    img.data[idx] = r;
+                    img.data[idx + 1] = g;
+                    img.data[idx + 2] = b;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+
+            // Frequency labels on Y axis
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.fillRect(0, 0, 42, H);
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#ccc";
+            ctx.textBaseline = "middle";
+            const freqLabels = [0, 100, 200, 300, 400, 500];
+            for (const fq of freqLabels) {
+                const y = H - (fq / maxFreqHz) * H;
+                if (y >= 0 && y <= H) {
+                    ctx.fillText(`${fq}`, 2, y);
+                    // Thin gridline
+                    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+                    ctx.beginPath();
+                    ctx.moveTo(42, y);
+                    ctx.lineTo(W, y);
+                    ctx.stroke();
+                }
+            }
+
+            // Render legend gradient
+            const legend = this.$refs.spectrogramLegend;
+            if (legend) {
+                const lctx = legend.getContext("2d");
+                const lw = legend.width;
+                const lh = legend.height;
+                for (let x = 0; x < lw; x++) {
+                    const v4 = (x / lw) * 4;
+                    let r, g, b2;
+                    if (v4 < 1) {
+                        r = 0;
+                        g = 0;
+                        b2 = Math.floor(v4 * 180);
+                    } else if (v4 < 2) {
+                        r = 0;
+                        g = Math.floor((v4 - 1) * 255);
+                        b2 = 180;
+                    } else if (v4 < 3) {
+                        r = Math.floor((v4 - 2) * 255);
+                        g = 255;
+                        b2 = 180 - Math.floor((v4 - 2) * 180);
+                    } else {
+                        r = 255;
+                        g = 255;
+                        b2 = Math.floor((v4 - 3) * 255);
+                    }
+                    lctx.fillStyle = `rgb(${r},${g},${b2})`;
+                    lctx.fillRect(x, 0, 1, lh);
+                }
             }
         },
 

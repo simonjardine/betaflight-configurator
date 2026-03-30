@@ -2793,8 +2793,8 @@ function runSysID(frames, config, propInches) {
                 ci + 1 < cohRaw.length
                     ? cohRaw[ci] * (1 - cf) + cohRaw[ci + 1] * cf
                     : ci < cohRaw.length
-                      ? cohRaw[ci]
-                      : 0;
+                        ? cohRaw[ci]
+                        : 0;
             filtCoh.push(Math.min(1, Math.max(0, c)));
         }
 

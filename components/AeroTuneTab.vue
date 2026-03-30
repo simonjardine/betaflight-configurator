@@ -381,42 +381,32 @@
                                     ></canvas>
                                 </div>
 
-                                <!-- Graph 4: Freq vs Throttle Spectrogram -->
+                                <!-- Graph 4: Frequency Spectrum (FFT) -->
                                 <div class="at-graph-panel">
                                     <div class="at-graph-header">
-                                        <span class="at-graph-title">Frequency vs Throttle</span>
-                                        <div class="at-spectrogram-legend">
-                                            <span class="at-sg-quiet">quiet</span>
-                                            <canvas ref="spectrogramLegend" width="100" height="10"></canvas>
-                                            <span class="at-sg-loud">loud</span>
-                                        </div>
+                                        <span class="at-graph-title">Frequency Spectrum</span>
                                     </div>
-                                    <div class="at-spectrogram-row">
-                                        <canvas
-                                            ref="graphSpectrogram"
-                                            class="at-graph-canvas at-graph-canvas--tall"
-                                            width="900"
-                                            height="280"
-                                        ></canvas>
-                                        <input
-                                            type="range"
-                                            class="at-gain-slider"
-                                            min="10"
-                                            max="400"
-                                            :value="spectrogramGain"
-                                            orient="vertical"
-                                            title="Intensity gain"
-                                            @input="
-                                                spectrogramGain = Number($event.target.value);
-                                                renderGraphs();
-                                            "
-                                        />
-                                    </div>
+                                    <canvas
+                                        ref="graphSpectrogram"
+                                        class="at-graph-canvas at-graph-canvas--tall"
+                                        width="900"
+                                        height="240"
+                                    ></canvas>
                                 </div>
                             </div>
 
                             <!-- ═══ ANALYSIS RESULTS ═══ -->
                             <div class="at-results-box">{{ analysisResult }}</div>
+
+                            <!-- ═══ FILTER CHANGE COMMANDS ═══ -->
+                            <div v-if="filterCommands && filterCommands.length > 0" class="at-filter-cmds-section">
+                                <pre class="at-filter-cmds-code">{{ filterCommands.join("\n") }}</pre>
+                                <div class="at-pid-actions">
+                                    <button class="at-apply-btn" @click="copyFilterCommands">
+                                        {{ filterCopyBtnText }}
+                                    </button>
+                                </div>
+                            </div>
 
                             <!-- ═══ Extended Analysis (text) ═══ -->
                             <div v-if="extendedAnalysis" class="at-extended-analysis">
@@ -2223,124 +2213,40 @@ function formatAnalysisResult(r) {
     if (r.error) {
         return `ERROR: ${r.error}`;
     }
-    const SEP = "════════════════════════════════════════════════════";
     const lines = [];
 
-    // ── Frame counts & throttle zone split ────────────────────────────────────
-    lines.push(
-        `Frames analysed : ${r.totalFrames}`,
-        `Low throttle zone  (≤1570): ${r.lowZoneFrames} frames`,
-        `High throttle zone (>1570): ${r.highZoneFrames} frames (${r.highZonePct}%)`,
-        ``,
-    );
+    // 1. RPM FILTER STATUS — one line
+    if (r.rpmFilterActive) {
+        lines.push(`RPM filter active (${r.rpmHarmonics} harmonics) — gyro lowpass not required ✅`);
+    } else {
+        lines.push(`RPM filter not detected — enable RPM filter + bidirectional DShot for best noise rejection ⚠️`);
+    }
+
+    // 2. SETPOINT TRACKING — one line summary
+    const rRatio = r.rollTrackingRatio !== null ? r.rollTrackingRatio.toFixed(3) : "N/A";
+    const pRatio = r.pitchTrackingRatio !== null ? r.pitchTrackingRatio.toFixed(3) : "N/A";
+    const trackingLabelCombined =
+        r.rollTracking.label === "Excellent" && r.pitchTracking.label === "Excellent"
+            ? "Excellent"
+            : r.rollTracking.label === "Good" || r.pitchTracking.label === "Good"
+              ? "Good"
+              : "Needs work";
+    let trackingLine = `Setpoint tracking: ${trackingLabelCombined} (Roll ${rRatio}, Pitch ${pRatio})`;
+    if (r.propwashDetected) trackingLine += " — propwash detected";
+    lines.push(trackingLine);
+
+    // 3. P AND D SUMMARY — one compact line
+    const dRatio =
+        r.config?.pids?.roll?.[0] && r.config?.pids?.roll?.[2]
+            ? (r.config.pids.roll[2] / r.config.pids.roll[0]).toFixed(2)
+            : "N/A";
+    lines.push(`P: ${r.pVerdict} | D: ${r.dVerdict} (D/P ratio ${dRatio})`);
 
     if (r.lowHighThrottleWarning) {
         lines.push(
             `⚠️ Limited high-throttle data (${r.highZonePct}%) — fly with sustained throttle punches for accurate noise analysis`,
-            ``,
         );
     }
-
-    // ── RPM FILTER STATUS ─────────────────────────────────────────────────────
-    lines.push(SEP, `  RPM FILTER STATUS`, SEP);
-    if (r.rpmFilterActive) {
-        lines.push(`RPM filter active (${r.rpmHarmonics} harmonics) — gyro lowpass filters not required ✅`);
-    } else {
-        lines.push(`RPM filter not detected — enable RPM filter + bidirectional DShot for best noise rejection`);
-    }
-    lines.push(``);
-
-    // ── LOW THROTTLE ZONE: TRACKING QUALITY ───────────────────────────────────
-    const rRatio = r.rollTrackingRatio !== null ? r.rollTrackingRatio.toFixed(3) : "N/A";
-    const pRatio = r.pitchTrackingRatio !== null ? r.pitchTrackingRatio.toFixed(3) : "N/A";
-    lines.push(
-        SEP,
-        `  LOW THROTTLE ZONE — TRACKING QUALITY`,
-        SEP,
-        `Roll tracking:  ${rRatio} (target: 1.000) — ${r.rollTracking.label}`,
-        `Pitch tracking: ${pRatio} (target: 1.000) — ${r.pitchTracking.label}`,
-        `Zero-crossing rate (P oscillation): ${r.zeroCrossingRate}% — ${r.zcLabel}`,
-    );
-    if (r.propwashDetected) {
-        lines.push(`Propwash oscillation detected in throttle cuts`);
-    }
-    lines.push(``);
-
-    // ── HIGH THROTTLE ZONE: NOISE QUALITY ─────────────────────────────────────
-    lines.push(SEP, `  HIGH THROTTLE ZONE — NOISE QUALITY`, SEP);
-
-    // FFT Noise peaks
-    if (r.fftNoisePeaks.length > 0) {
-        lines.push(`Top noise peaks (gyro FFT, >80Hz):`);
-        for (const pk of r.fftNoisePeaks) {
-            lines.push(`  Peak at ${pk.freq}Hz (${pk.relAmplitude}% rel) — ${pk.coverage} ${pk.coverageIcon}`);
-        }
-    } else if (r.highZoneFrames < 64) {
-        lines.push(`Insufficient high-throttle data for FFT analysis`);
-    } else {
-        lines.push(`No significant noise peaks detected above 80Hz ✅`);
-    }
-    lines.push(``);
-
-    // RPM harmonic alignment
-    if (r.rpmAlignment) {
-        lines.push(`Motor fundamental at ~${r.rpmAlignment.fundamental}Hz`);
-        for (const h of r.rpmAlignment.harmonics) {
-            if (h.aligned) {
-                lines.push(`  ${h.harmonic}x harmonic (${h.freq}Hz) — RPM filter aligned ✅`);
-            } else {
-                lines.push(`  ${h.harmonic}x harmonic (${h.freq}Hz) — possible gap in RPM coverage ⚠️`);
-            }
-        }
-        lines.push(``);
-    }
-
-    // D-term noise
-    lines.push(
-        `D-term noise: low zone ${r.dTermNoise.lowZone} (RMS ${r.dTermNoise.lowRms}) | high zone ${r.dTermNoise.highZone} (RMS ${r.dTermNoise.highRms})`,
-        ``,
-    );
-
-    // ── P GAIN ────────────────────────────────────────────────────────────────
-    lines.push(SEP, `  ROLL/PITCH P : ${r.pVerdict}`, SEP);
-    lines.push(
-        r.pAction,
-        `Tip: level mode and acro mode are both valid for tuning. Level mode gives clean repeatable step inputs.`,
-        ``,
-    );
-
-    // ── D GAIN ────────────────────────────────────────────────────────────────
-    lines.push(SEP, `  ROLL/PITCH D : ${r.dVerdict}`, SEP, r.dAction);
-
-    // ── Flight 2 refinement — D_Max headroom ──────────────────────────────────
-    if (r.dMaxRefinement) {
-        const ref = r.dMaxRefinement;
-        lines.push(
-            ``,
-            SEP,
-            `  FLIGHT 2 REFINEMENT — D_MAX HEADROOM`,
-            SEP,
-            `D_Max is at Betaflight defaults (Roll: ${ref.dMaxRoll}, Pitch: ${ref.dMaxPitch}).`,
-            `With ${ref.avgOvershoot.toFixed(1)}% average overshoot the D-term ceiling may be too permissive during fast moves.`,
-            ``,
-            `Suggested CLI changes:`,
-            `  set d_max = ${ref.suggestRoll},${ref.suggestPitch},0  # was ${ref.dMaxRoll},${ref.dMaxPitch},0`,
-            `  set d_max_advance = ${ref.suggestAdvance}  # was ${ref.dMaxAdvance}`,
-            ``,
-            `Re-fly the test pattern and re-analyze. If overshoot drops below 15% these values are correct.`,
-        );
-    }
-
-    // ── SUGGESTED CHANGES (only when something is genuinely wrong) ────────────
-    if (r.filterSuggestions && r.filterSuggestions.length > 0) {
-        lines.push(``, SEP, `  SUGGESTED CHANGES`, SEP);
-        for (const s of r.filterSuggestions) {
-            lines.push(`  ${s}`);
-        }
-        lines.push(``);
-    }
-
-    lines.push(``, `Fresh props recommended before tuning — damaged props create false noise in logs.`);
 
     return lines.join("\n");
 }
@@ -2793,8 +2699,8 @@ function runSysID(frames, config, propInches) {
                 ci + 1 < cohRaw.length
                     ? cohRaw[ci] * (1 - cf) + cohRaw[ci + 1] * cf
                     : ci < cohRaw.length
-                        ? cohRaw[ci]
-                        : 0;
+                      ? cohRaw[ci]
+                      : 0;
             filtCoh.push(Math.min(1, Math.max(0, c)));
         }
 
@@ -2963,11 +2869,11 @@ const _logCache = {
     bblSelectedSession: 0,
     _graphFrames: null,
     _graphConfig: null,
-    _freqVsThrottleData: null,
     extendedAnalysis: null,
     logPidOutput: null,
     graphsVisible: false,
     sysidResult: null,
+    filterCommands: [],
 };
 
 export default {
@@ -3033,6 +2939,8 @@ export default {
             logPidOutput: null,
             logPidCopyBtnText: "📋 COPY NEW PIDs",
             logPidApplyBtnText: "✓ APPLY NEW PIDs TO FC",
+            filterCommands: [],
+            filterCopyBtnText: "COPY FILTER CHANGES TO CLI",
             sysidResult: null,
             sysidActiveAxis: "roll",
             sysidZoom: "full",
@@ -3064,11 +2972,11 @@ export default {
             this.bblSelectedSession = _logCache.bblSelectedSession;
             this._graphFrames = _logCache._graphFrames;
             this._graphConfig = _logCache._graphConfig;
-            this._freqVsThrottleData = _logCache._freqVsThrottleData;
             this.extendedAnalysis = _logCache.extendedAnalysis;
             this.logPidOutput = _logCache.logPidOutput;
             this.graphsVisible = _logCache.graphsVisible;
             this.sysidResult = _logCache.sysidResult;
+            this.filterCommands = _logCache.filterCommands || [];
             if (this._graphFrames?.length) {
                 this.$nextTick(() => this.renderGraphs());
             }
@@ -3441,6 +3349,7 @@ export default {
             // Detect chirp / SysID log — if found, run frequency response analysis
             // and skip the normal filter effectiveness scoring.
             this.sysidResult = null;
+            this.filterCommands = [];
             if (detectChirp(frames, config)) {
                 const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1} — ` : "";
                 this.analysisResult = `${prefix}CHIRP / SYSID log detected — see frequency response analysis below.`;
@@ -3456,6 +3365,7 @@ export default {
             const prefix = sessions.length > 1 ? `Session ${sessionIdx + 1}: ` : "";
             const result = analyzeLog(frames, this.motorTemp, config);
             this.analysisResult = prefix + formatAnalysisResult(result);
+            this.filterCommands = result.filterSuggestions || [];
             this._processAnalysisGraphs(frames, config, result);
         },
 
@@ -3480,11 +3390,11 @@ export default {
             _logCache.bblSelectedSession = this.bblSelectedSession;
             _logCache._graphFrames = this._graphFrames;
             _logCache._graphConfig = this._graphConfig;
-            _logCache._freqVsThrottleData = this._freqVsThrottleData;
             _logCache.extendedAnalysis = this.extendedAnalysis;
             _logCache.logPidOutput = this.logPidOutput;
             _logCache.graphsVisible = this.graphsVisible;
             _logCache.sysidResult = this.sysidResult;
+            _logCache.filterCommands = this.filterCommands;
         },
 
         onFileChange(e) {
@@ -3569,12 +3479,6 @@ export default {
                 result.dTermNoise,
                 this.motorTemp,
             );
-
-            // Build freq-vs-throttle spectrogram data
-            const rawHeader = config?._raw ?? {};
-            const motorPoles = config?.motor?.poles ?? parseInt(rawHeader["motor_poles"] ?? "14", 10);
-            this._freqVsThrottleData =
-                frames.length >= 64 ? _buildFreqVsThrottleData(frames, sampleRate, motorPoles) : null;
 
             this._saveAnalysisCache();
             this.$nextTick(() => {
@@ -3689,11 +3593,8 @@ export default {
                 label: "error",
             });
 
-            // Graph 4: Freq vs Throttle Spectrogram
-            this._renderFreqVsThrottle(this.$refs.graphSpectrogram, config);
-
-            // Legend
-            this._renderSpectrogramLegend();
+            // Graph 4: Frequency Spectrum (FFT of gyroUnfilt / gyroADC)
+            this._renderFreqSpectrum(this.$refs.graphSpectrogram, frames, config);
         },
 
         _renderTimeSeries(canvas, frames, opts) {
@@ -3778,8 +3679,8 @@ export default {
             const xStep = plotW / (endFrame - startFrame - 1 || 1);
             for (const trace of traces) {
                 ctx.strokeStyle = trace.color;
-                ctx.lineWidth = trace.alpha ? 1.0 : 1.2;
-                ctx.globalAlpha = trace.alpha ?? 0.85;
+                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = trace.alpha ?? 1.0;
                 ctx.beginPath();
                 for (let i = 0; i < trace.vals.length; i++) {
                     const x = PAD_L + i * xStep;
@@ -3797,180 +3698,206 @@ export default {
             ctx.strokeRect(PAD_L, PAD_T, plotW, plotH);
         },
 
-        _renderFreqVsThrottle(canvas, config) {
-            if (!canvas || !this._freqVsThrottleData) return;
+        _renderFreqSpectrum(canvas, frames, config) {
+            if (!canvas || !frames || frames.length < 64) return;
             const ctx = canvas.getContext("2d");
             const W = canvas.width;
             const H = canvas.height;
             const PAD_L = 48,
-                PAD_R = 8,
-                PAD_T = 4,
-                PAD_B = 22;
+                PAD_R = 12,
+                PAD_T = 8,
+                PAD_B = 24;
             const plotW = W - PAD_L - PAD_R;
             const plotH = H - PAD_T - PAD_B;
 
-            const { matrix, maxBin, maxFreqHz, rpmPerBin, thrMin, thrMax } = this._freqVsThrottleData;
-
-            // Clear — dark background
-            ctx.fillStyle = "hsl(0,0%,4%)";
+            // Dark background
+            ctx.fillStyle = "#0a0a0a";
             ctx.fillRect(0, 0, W, H);
 
-            // Gain control — slider 10-400 maps to 0.1x–4.0x
-            const gainFactor = (this.spectrogramGain || 100) / 100;
+            // Sample rate from config
+            const looptimeUs = config?.misc?.looptime ?? 312;
+            const sampleRate = 1e6 / looptimeUs;
+            const maxFreqHz = Math.min(sampleRate / 2, 500);
 
-            // Adaptive normalisation: 95th-percentile of populated bins avoids outlier washout.
-            // Matches the Blackbox Explorer approach to scaling before colour mapping.
-            const allVals = [];
-            for (let t = 0; t < 100; t++) {
-                for (let k = 0; k < maxBin; k++) {
-                    if (matrix[t][k] > 0) allVals.push(matrix[t][k]);
-                }
+            // Collect gyroUnfilt[0] (or fallback to gyroADC[0]) — all frames
+            const hasUnfilt = frames[0]?.["gyroUnfilt[0]"] !== undefined;
+            const signal = frames.map((f) => Number(hasUnfilt ? (f["gyroUnfilt[0]"] ?? 0) : (f["gyroADC[0]"] ?? 0)));
+
+            // FFT with Hann window — use up to 8192 samples for resolution
+            const fftN = (() => {
+                let p = 1;
+                const n = Math.min(signal.length, 8192);
+                while (p < n) p <<= 1;
+                return p;
+            })();
+            const re = new Float64Array(fftN);
+            const im = new Float64Array(fftN);
+            // Hann window
+            for (let i = 0; i < fftN && i < signal.length; i++) {
+                const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftN - 1)));
+                re[i] = signal[i] * w;
             }
-            allVals.sort((a, b) => a - b);
-            const p95idx = Math.floor(allVals.length * 0.95);
-            let globalMax = allVals.length > 0 ? allVals[p95idx] || allVals[allVals.length - 1] : 1;
-            if (!globalMax) globalMax = 1;
+            fftInPlace(re, im);
 
-            // ── Blackbox Explorer heatmap rendering ─────────────────────────
-            // Draw at data resolution (maxBin × 100 throttle bins) using BBE's
-            // exact HSL colormap: hsl(360, 100%, valuePlot%)
-            //   0% lightness = black (quiet), 50% = red (moderate), 100% = white (loud)
-            // Then drawImage scales it up to the plot area — smooth browser scaling.
-            const heatCanvas = document.createElement("canvas");
-            heatCanvas.width = maxBin;
-            heatCanvas.height = 100;
-            const hctx = heatCanvas.getContext("2d", { alpha: false });
-
-            for (let j = 0; j < 100; j++) {
-                for (let i = 0; i < maxBin; i++) {
-                    const valuePlot = Math.round(Math.min((matrix[j][i] / globalMax) * gainFactor * 100, 100));
-                    hctx.fillStyle = `hsl(360, 100%, ${valuePlot}%)`;
-                    // j=0 is 0% throttle (bottom of graph). Invert so high throttle sits at top.
-                    hctx.fillRect(i, 99 - j, 1, 1);
-                }
+            // Magnitude spectrum — positive frequencies only, up to maxFreqHz
+            const freqBinHz = sampleRate / fftN;
+            const maxBin = Math.min(fftN >> 1, Math.ceil(maxFreqHz / freqBinHz));
+            const mag = new Float64Array(maxBin);
+            for (let k = 0; k < maxBin; k++) {
+                mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]) / fftN;
             }
 
-            // BBE blur pass: 1 px Gaussian smooths sparse FFT bins
-            hctx.filter = "blur(1px)";
-            hctx.drawImage(heatCanvas, 0, 0);
-            hctx.filter = "none";
+            // Find max noise peak above 80Hz
+            const minPeakBin = Math.ceil(80 / freqBinHz);
+            let maxMag = 0,
+                maxMagBin = minPeakBin;
+            for (let k = minPeakBin; k < maxBin; k++) {
+                if (mag[k] > maxMag) {
+                    maxMag = mag[k];
+                    maxMagBin = k;
+                }
+            }
+            const maxNoiseHz = Math.round(maxMagBin * freqBinHz);
 
-            // Scale the data-resolution heatmap up to the full plot area
-            ctx.drawImage(heatCanvas, 0, 0, maxBin, 100, PAD_L, PAD_T, plotW, plotH);
+            // Scale: 95th-percentile normalisation (avoids outlier washout)
+            const sorted = Float64Array.from(mag).sort();
+            const p95 = sorted[Math.floor(sorted.length * 0.95)] || sorted[sorted.length - 1] || 1;
+            const yScale = plotH / (p95 || 1);
 
-            // Filter overlay lines
-            const drawFilterLine = (freqHz, label, color) => {
-                if (!freqHz || freqHz <= 0 || freqHz >= maxFreqHz) return;
+            // Grid lines
+            ctx.strokeStyle = "rgba(255,255,255,0.06)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 5]);
+            for (let g = 1; g <= 4; g++) {
+                const y = PAD_T + plotH * (g / 4);
+                ctx.beginPath();
+                ctx.moveTo(PAD_L, y);
+                ctx.lineTo(PAD_L + plotW, y);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // Green filled FFT spectrum (mountain range profile)
+            ctx.beginPath();
+            ctx.moveTo(PAD_L, PAD_T + plotH);
+            for (let k = 0; k < maxBin; k++) {
+                const x = PAD_L + (k / maxBin) * plotW;
+                const y = PAD_T + plotH - Math.min(mag[k] * yScale, plotH);
+                if (k === 0) ctx.lineTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.lineTo(PAD_L + plotW, PAD_T + plotH);
+            ctx.closePath();
+            const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + plotH);
+            grad.addColorStop(0, "rgba(0,220,80,0.85)");
+            grad.addColorStop(1, "rgba(0,100,30,0.3)");
+            ctx.fillStyle = grad;
+            ctx.fill();
+            // Green outline
+            ctx.beginPath();
+            for (let k = 0; k < maxBin; k++) {
+                const x = PAD_L + (k / maxBin) * plotW;
+                const y = PAD_T + plotH - Math.min(mag[k] * yScale, plotH);
+                if (k === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = "rgba(0,255,80,0.9)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Red vertical line at max noise peak
+            const peakX = PAD_L + (maxMagBin / maxBin) * plotW;
+            ctx.strokeStyle = "#ff3030";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(peakX, PAD_T);
+            ctx.lineTo(peakX, PAD_T + plotH);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "#ff6060";
+            ctx.font = "bold 10px monospace";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillText(`Max noise ${maxNoiseHz}Hz`, peakX + 3, PAD_T + 2);
+
+            // Cyan filter cutoff overlay lines
+            const drawFilterLine = (freqHz, label) => {
+                if (!freqHz || freqHz <= 0 || freqHz > maxFreqHz) return;
                 const x = PAD_L + (freqHz / maxFreqHz) * plotW;
-                ctx.strokeStyle = color;
+                ctx.strokeStyle = "rgba(0,220,220,0.8)";
                 ctx.lineWidth = 1.5;
-                ctx.setLineDash([4, 3]);
+                ctx.setLineDash([5, 4]);
                 ctx.beginPath();
                 ctx.moveTo(x, PAD_T);
                 ctx.lineTo(x, PAD_T + plotH);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.fillStyle = "rgba(0,220,220,0.9)";
                 ctx.font = "9px monospace";
-                ctx.fillStyle = color;
-                ctx.textAlign = "left";
-                ctx.fillText(label, x + 2, PAD_T + 10);
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.fillText(label, x, PAD_T + plotH - 2);
             };
-
             if (config) {
-                drawFilterLine(
-                    config.dtermFilters?.lpf1Hz,
-                    `D-LPF1 ${config.dtermFilters?.lpf1Hz}Hz`,
-                    "rgba(0,180,200,0.7)",
-                );
-                drawFilterLine(
-                    config.dtermFilters?.lpf2Hz,
-                    `D-LPF2 ${config.dtermFilters?.lpf2Hz}Hz`,
-                    "rgba(16,140,170,0.7)",
-                );
-                drawFilterLine(
-                    config.dtermFilters?.yawLpfHz,
-                    `Yaw LPF ${config.dtermFilters?.yawLpfHz}Hz`,
-                    "rgba(80,180,80,0.7)",
-                );
-                // Dynamic notch range
+                const lpf1 = config.dtermFilters?.lpf1Hz;
+                const lpf2 = config.dtermFilters?.lpf2Hz;
+                const yawLpf = config.dtermFilters?.yawLpfHz;
                 const dynMin = config.dynamicNotch?.minHz;
                 const dynMax = config.dynamicNotch?.maxHz;
+                if (lpf1 > 0) drawFilterLine(lpf1, `D-LPF (PT1) ${lpf1}Hz`);
+                if (lpf2 > 0) drawFilterLine(lpf2, `D-LPF2 (PT1) ${lpf2}Hz`);
+                if (yawLpf > 0) drawFilterLine(yawLpf, `YAW LPF ${yawLpf}Hz`);
                 if (dynMin > 0 && dynMax > dynMin) {
-                    drawFilterLine(dynMin, `Dyn notch min`, "rgba(160,100,255,0.5)");
-                    drawFilterLine(dynMax, `Dyn notch max`, "rgba(160,100,255,0.5)");
-                    // Shaded range
                     const x1 = PAD_L + (dynMin / maxFreqHz) * plotW;
                     const x2 = PAD_L + (dynMax / maxFreqHz) * plotW;
-                    ctx.fillStyle = "rgba(160,100,255,0.08)";
+                    ctx.fillStyle = "rgba(0,200,200,0.06)";
                     ctx.fillRect(x1, PAD_T, x2 - x1, plotH);
+                    drawFilterLine(dynMin, `Dyn ${dynMin}Hz`);
+                    drawFilterLine(dynMax, `Dyn ${dynMax}Hz`);
                 }
             }
 
-            // Cyan diagonal RPM line — pre-computed in _buildFreqVsThrottleData
-            if (rpmPerBin) {
-                ctx.strokeStyle = "rgba(0,255,255,0.85)";
-                ctx.lineWidth = 2;
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                let started = false;
-                for (let thrBin = 0; thrBin < 100; thrBin++) {
-                    const freqHz = rpmPerBin[thrBin];
-                    if (freqHz < 5 || freqHz > maxFreqHz) continue;
-                    const x = PAD_L + (freqHz / maxFreqHz) * plotW;
-                    const y = PAD_T + plotH * (1 - thrBin / 100);
-                    if (!started) {
-                        ctx.moveTo(x, y);
-                        started = true;
-                    } else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-                if (started) {
-                    ctx.font = "9px monospace";
-                    ctx.fillStyle = "rgba(0,255,255,0.9)";
-                    ctx.textAlign = "right";
-                    ctx.textBaseline = "bottom";
-                    ctx.fillText("Motor RPM", PAD_L + plotW - 4, PAD_T + plotH - 4);
-                }
-            }
-
-            // Axis labels
+            // X axis labels at 80, 160, 240, 321, 401Hz + endpoints
             ctx.font = "10px monospace";
-            ctx.fillStyle = "#888";
+            ctx.fillStyle = "#777";
             ctx.textBaseline = "top";
             ctx.textAlign = "center";
-            for (let f = 0; f <= maxFreqHz; f += 100) {
+            for (const f of [0, 80, 160, 240, 321, 401, Math.round(maxFreqHz)]) {
+                if (f > maxFreqHz) continue;
                 const x = PAD_L + (f / maxFreqHz) * plotW;
-                ctx.fillText(`${f}`, x, PAD_T + plotH + 4);
+                ctx.fillText(`${f}`, x, PAD_T + plotH + 5);
+                // Tick
+                ctx.strokeStyle = "rgba(255,255,255,0.2)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, PAD_T + plotH);
+                ctx.lineTo(x, PAD_T + plotH + 3);
+                ctx.stroke();
             }
-            // Y axis labels — fixed 0-100% throttle range
+
+            // Y axis label
+            ctx.save();
+            ctx.translate(12, PAD_T + plotH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#666";
+            ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.textAlign = "right";
-            for (let step = 0; step <= 4; step++) {
-                const frac = step / 4;
-                const pct = Math.round(frac * 100);
-                const y = PAD_T + plotH * (1 - frac);
-                ctx.fillText(`${pct}%`, PAD_L - 4, y);
-            }
+            ctx.fillText("Amplitude", 0, 0);
+            ctx.restore();
+
+            // X axis title
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#666";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.fillText("Frequency (Hz)", PAD_L + plotW / 2, H);
 
             // Border
             ctx.strokeStyle = "#333";
             ctx.lineWidth = 1;
-            ctx.setLineDash([]);
             ctx.strokeRect(PAD_L, PAD_T, plotW, plotH);
-        },
-
-        _renderSpectrogramLegend() {
-            const legend = this.$refs.spectrogramLegend;
-            if (!legend) return;
-            const lctx = legend.getContext("2d");
-            const lw = legend.width;
-            const lh = legend.height;
-            // BBE HSL colormap: hsl(360, 100%, n%) — black→red→white
-            for (let x = 0; x < lw; x++) {
-                const valuePlot = Math.round((x / lw) * 100);
-                lctx.fillStyle = `hsl(360, 100%, ${valuePlot}%)`;
-                lctx.fillRect(x, 0, 1, lh);
-            }
         },
 
         graphZoom(graph, direction) {
@@ -4069,6 +3996,37 @@ export default {
                     /* silent */
                 }
                 document.body.removeChild(el);
+            }
+        },
+
+        copyFilterCommands() {
+            if (!this.filterCommands?.length) return;
+            const text = [...this.filterCommands, "save"].join("\n");
+            const confirm = () => {
+                this.filterCopyBtnText = "✔ Copied!";
+                setTimeout(() => {
+                    this.filterCopyBtnText = "COPY FILTER CHANGES TO CLI";
+                }, 2000);
+            };
+            const fallback = () => {
+                const el = document.createElement("textarea");
+                el.value = text;
+                el.style.position = "fixed";
+                el.style.opacity = "0";
+                document.body.appendChild(el);
+                el.select();
+                try {
+                    document.execCommand("copy");
+                    confirm();
+                } catch {
+                    /* silent */
+                }
+                document.body.removeChild(el);
+            };
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(confirm).catch(fallback);
+            } else {
+                fallback();
             }
         },
 
